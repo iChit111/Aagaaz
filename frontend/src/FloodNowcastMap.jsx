@@ -2,6 +2,7 @@ import FloodNowcastMap from './FloodNowcastMap';
 import { useEffect, useState } from 'react';
 import Map, { Layer, Source } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import puneRoadsData from './pune_roads.geojson';
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 const MAP_STYLE = 'mapbox://styles/mapbox/dark-v11';
@@ -97,19 +98,25 @@ export default function FloodNowcastMap() {
     <main style={styles.mapShell}>
       <Map
         initialViewState={{
-          longitude: 73.8567,
-          latitude: 18.5204,
-          zoom: 14,
+          longitude: 73.84, // Deccan Gymkhana approx longitude
+          latitude: 18.51,  // Deccan Gymkhana approx latitude
+          zoom: 14
         }}
-        mapStyle={MAP_STYLE}
-        mapboxAccessToken={import.meta.env.VITE_MAPBOX_ACCESS_TOKEN}
+        mapStyle="mapbox://styles/mapbox/dark-v11"
       >
-        {networkData && (
-          <Source id="flood-network" type="geojson" data={networkData}>
-            <Layer {...pipeLayer} />
-            <Layer {...nodeLayer} />
-          </Source>
-        )}
+        {/* The Static Road Geometry */}
+        <Source id="pune-roads" type="geojson" data={puneRoadsData}>
+          {/* The Data-Driven Styling Layer */}
+          <Layer 
+            id="road-floods" 
+            type="line" 
+            paint={{
+              'line-width': 3,
+              // We will add the color expression here later based on your API response
+              'line-color': '#00FF00' 
+            }} 
+          />
+        </Source>
       </Map>
 
       <section style={styles.controlPanel} aria-label="Flood simulation controls">

@@ -1,8 +1,7 @@
-import FloodNowcastMap from './FloodNowcastMap';
 import { useEffect, useState } from 'react';
 import Map, { Layer, Source } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import puneRoadsData from './pune_roads.geojson';
+import puneRoadsData from './pune_roads.json';
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 const MAP_STYLE = 'mapbox://styles/mapbox/dark-v11';

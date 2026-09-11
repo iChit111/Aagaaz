@@ -96,26 +96,34 @@ export default function FloodNowcastMap() {
   return (
     <main style={styles.mapShell}>
       <Map
+        mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
         initialViewState={{
           longitude: 73.84, // Deccan Gymkhana approx longitude
           latitude: 18.51,  // Deccan Gymkhana approx latitude
-          zoom: 14
+          zoom: 15 // Zoomed in slightly more to see the manholes clearly
         }}
-        mapStyle="mapbox://styles/mapbox/dark-v11"
+        mapStyle={MAP_STYLE}
       >
-        {/* The Static Road Geometry */}
+        {/* Layer 1: The Static Road Skeleton */}
         <Source id="pune-roads" type="geojson" data={puneRoadsData}>
-          {/* The Data-Driven Styling Layer */}
           <Layer 
-            id="road-floods" 
+            id="road-basemap" 
             type="line" 
             paint={{
-              'line-width': 3,
-              // We will add the color expression here later based on your API response
-              'line-color': '#00FF00' 
+              'line-width': 1,
+              'line-color': '#4b5563', /* Faint gray */
+              'line-opacity': 0.4
             }} 
           />
         </Source>
+
+        {/* Layer 2: The Live API Data Overlay */}
+        {networkData && (
+          <Source id="flood-network" type="geojson" data={networkData}>
+            <Layer {...pipeLayer} />
+            <Layer {...nodeLayer} />
+          </Source>
+        )}
       </Map>
 
       <section style={styles.controlPanel} aria-label="Flood simulation controls">

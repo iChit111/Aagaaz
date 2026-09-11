@@ -19,7 +19,7 @@
     Water Quality .......... NO
   Flow Routing Method ...... KINWAVE
   Starting Date ............ 01/01/2026 00:00:00
-  Ending Date .............. 01/01/2026 01:00:00
+  Ending Date .............. 01/01/2026 03:00:00
   Antecedent Dry Days ...... 0.0
   Report Time Step ......... 00:15:00
   Routing Time Step ........ 20.00 sec
@@ -32,14 +32,14 @@
   Wet Weather Inflow .......         0.000         0.000
   Groundwater Inflow .......         0.000         0.000
   RDII Inflow ..............         0.000         0.000
-  External Inflow ..........         0.127         1.265
-  External Outflow .........         0.039         0.394
-  Flooding Loss ............         0.086         0.864
+  External Inflow ..........         0.405         4.046
+  External Outflow .........         0.120         1.198
+  Flooding Loss ............         0.284         2.841
   Evaporation Loss .........         0.000         0.000
   Exfiltration Loss ........         0.000         0.000
   Initial Stored Volume ....         0.000         0.000
   Final Stored Volume ......         0.002         0.015
-  Continuity Error (%) .....        -0.652
+  Continuity Error (%) .....        -0.209
   
   
   ********************************
@@ -55,7 +55,7 @@
   Average Time Step           :    20.00 sec
   Maximum Time Step           :    20.00 sec
   % of Time in Steady State   :     0.00
-  Average Iterations per Step :     1.03
+  Average Iterations per Step :     1.01
   % of Steps Not Converging   :     0.00
   
   
@@ -83,9 +83,9 @@
                                    Inflow   Inflow   Occurrence      Volume      Volume       Error
   Node                 Type           CMS      CMS  days hr:min    10^6 ltr    10^6 ltr     Percent
   -------------------------------------------------------------------------------------------------
-  MANHOLE-PUNE-001     JUNCTION     0.353    0.353     0  00:00        1.27        1.27      -0.000
-  MANHOLE-PUNE-002     JUNCTION     0.000    0.112     0  00:01           0       0.398       0.000
-  OUTFALL-001          OUTFALL      0.000    0.112     0  00:11           0       0.394       0.000
+  MANHOLE-PUNE-001     JUNCTION     0.375    0.375     0  00:00        4.05        4.05       0.000
+  MANHOLE-PUNE-002     JUNCTION     0.000    0.112     0  00:01           0         1.2       0.000
+  OUTFALL-001          OUTFALL      0.000    0.112     0  00:11           0         1.2       0.000
   
   
   *********************
@@ -99,7 +99,7 @@
                         Hours       Rate    Occurrence      Volume    Volume
   Node                 Flooded       CMS   days hr:min    10^6 ltr   1000 m³
   --------------------------------------------------------------------------
-  MANHOLE-PUNE-001        1.00     0.241      0  00:00       0.867     0.000
+  MANHOLE-PUNE-001        3.00     0.263      0  00:00       2.844     0.000
   
   
   ***********************
@@ -111,9 +111,9 @@
                          Freq      Flow      Flow      Volume
   Outfall Node           Pcnt       CMS       CMS    10^6 ltr
   -----------------------------------------------------------
-  OUTFALL-001           98.89     0.111     0.112       0.394
+  OUTFALL-001           99.63     0.111     0.112       1.198
   -----------------------------------------------------------
-  System                98.89     0.111     0.112       0.394
+  System                99.63     0.111     0.112       1.198
   
   
   ********************
@@ -138,9 +138,9 @@
                          --------- Hours Full --------   Above Full   Capacity
   Conduit                Both Ends  Upstream  Dnstream   Normal Flow   Limited
   ----------------------------------------------------------------------------
-  PIPE-PUNE-001               1.00      1.00      1.00      0.99         1.00
+  PIPE-PUNE-001               3.00      3.00      3.00      2.99         3.00
   
 
-  Analysis begun on:  Fri Sep 11 11:59:41 2026
-  Analysis ended on:  Fri Sep 11 11:59:41 2026
+  Analysis begun on:  Fri Sep 11 12:15:32 2026
+  Analysis ended on:  Fri Sep 11 12:15:32 2026
   Total elapsed time: < 1 sec

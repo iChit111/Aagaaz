@@ -1,11 +1,12 @@
 """FastAPI backend for the urban flood nowcasting API."""
 
 import logging
+from datetime import timedelta
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict
+from typing import Dict, List
 from fastapi import HTTPException
 from pyswmm import Simulation, errors
 
@@ -46,7 +47,7 @@ def load_road_cluster(filepath: str, cluster_size: int = 40):
 # Anchor to this file's location, not the process's cwd.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 GEOJSON_PATH = os.path.join(BASE_DIR, "frontend", "src", "pune_roads.json")
-DECCAN_FLOOD_ZONE = load_road_cluster(GEOJSON_PATH, cluster_size=5)
+DECCAN_FLOOD_ZONE = load_road_cluster(GEOJSON_PATH, cluster_size=15)
 
 assert DECCAN_FLOOD_ZONE, "DECCAN_FLOOD_ZONE is empty — /simulate will always return {}"
 
@@ -57,6 +58,16 @@ NODE_TO_AREA = {
 # Assume average road segment area is 500 sqm
 AVERAGE_ROAD_AREA_SQM = 500.0
 RoadFloodStatus = Dict[str, float]
+REPORT_INTERVAL = timedelta(minutes=15)
+
+
+class FloodFrame(BaseModel):
+    elapsed_min: int
+    depths: RoadFloodStatus
+
+
+class NowcastResponse(BaseModel):
+    frames: List[FloodFrame]
 
 app = FastAPI(title="Urban Flood Nowcasting API")
 app.add_middleware(
@@ -110,35 +121,50 @@ def calculate_area_depths(surcharging_nodes: list[dict]) -> dict:
     return road_depths
 
 
-@app.post("/simulate", response_model=RoadFloodStatus)
-def simulate(request: SimulationRequest, response: Response) -> RoadFloodStatus:
-    """Run PySWMM and map physical surcharge volumes to road depths."""
+def _snapshot(elapsed_min: int, manhole_1, manhole_2) -> FloodFrame:
+    vol_1 = manhole_1.statistics["flooding_volume"]
+    vol_2 = manhole_2.statistics["flooding_volume"]
+    surcharging_nodes = [
+        {"node_id": "MANHOLE-PUNE-001", "surcharge_volume_m3": vol_1},
+        {"node_id": "MANHOLE-PUNE-002", "surcharge_volume_m3": vol_2},
+    ]
+    return {"elapsed_min": elapsed_min, "depths": calculate_area_depths(surcharging_nodes)}
+
+
+@app.post("/simulate", response_model=NowcastResponse)
+def simulate(request: SimulationRequest, response: Response) -> NowcastResponse:
+    """Run PySWMM and return a 0-3hr nowcast time series of street-level flood depths."""
     try:
         from pyswmm import Simulation, Nodes
 
         with Simulation(os.path.join(BASE_DIR, "pune_base.inp")) as sim:
             manhole_1 = Nodes(sim)["MANHOLE-PUNE-001"]
             manhole_2 = Nodes(sim)["MANHOLE-PUNE-002"]
-            
+
             # Convert UI slider (mm/hr) to Inflow (CMS) for a 1-hectare catchment
             runoff_cms = (request.rainfall_mm_per_hr / 3600000) * 10000 * 0.9
             manhole_1.generated_inflow(runoff_cms)
-            
-            # Step through the physics
-            for step in sim:
-                pass
-            
-            # PySWMM automatically tracks the total volume of water that escaped the manhole
-            vol_1 = manhole_1.statistics["flooding_volume"]
-            vol_2 = manhole_2.statistics["flooding_volume"]
 
-        surcharging_nodes = [
-            {"node_id": "MANHOLE-PUNE-001", "surcharge_volume_m3": vol_1},
-            {"node_id": "MANHOLE-PUNE-002", "surcharge_volume_m3": vol_2},
-        ]
-        
-        # Feed the real physics into your area-wide distribution
-        return calculate_area_depths(surcharging_nodes)
+            start_time = sim.start_time
+            next_report = start_time
+            frames = []
+
+            # Step through the physics, capturing a frame every report interval.
+            # node.statistics can only be read once the engine has started stepping,
+            # so the t=0 baseline frame is taken on the loop's first iteration.
+            for _step in sim:
+                if not frames:
+                    frames.append(_snapshot(0, manhole_1, manhole_2))
+                if sim.current_time >= next_report + REPORT_INTERVAL:
+                    next_report += REPORT_INTERVAL
+                    elapsed_min = int((next_report - start_time).total_seconds() // 60)
+                    frames.append(_snapshot(elapsed_min, manhole_1, manhole_2))
+
+            final_elapsed = int((sim.current_time - start_time).total_seconds() // 60)
+            if final_elapsed != frames[-1]["elapsed_min"]:
+                frames.append(_snapshot(final_elapsed, manhole_1, manhole_2))
+
+        return {"frames": frames}
 
     except Exception:
         logger.exception("PySWMM engine failed; falling back to mock flood data")
@@ -149,7 +175,7 @@ def simulate(request: SimulationRequest, response: Response) -> RoadFloodStatus:
             {"node_id": "MANHOLE-PUNE-001", "surcharge_volume_m3": surcharge_volume_m3},
             {"node_id": "MANHOLE-PUNE-002", "surcharge_volume_m3": 0.0},
         ]
-        return calculate_area_depths(surcharging_nodes)
+        return {"frames": [{"elapsed_min": 0, "depths": calculate_area_depths(surcharging_nodes)}]}
 
 
 if __name__ == "__main__":

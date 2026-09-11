@@ -17,14 +17,38 @@ class SimulationRequest(BaseModel):
 
 
 # Offline replacements for the precomputed spatial joins.
-NODE_TO_ROAD = {
-    "MANHOLE-PUNE-001": "MG_ROAD_SEG_3",
-    "MANHOLE-PUNE-002": "FC_ROAD_SEG_1",
+import json
+import os
+
+# 1. Automate the Area Extraction
+def load_road_cluster(filepath: str, cluster_size: int = 40):
+    """Reads the GeoJSON and grabs a contiguous block of roads to act as our flood area."""
+    try:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        
+        # Extract the IDs of the first N roads (Overpass returns them spatially clustered)
+        road_ids = []
+        for feature in data.get('features', [])[:cluster_size]:
+            road_id = feature.get('id') or feature.get('properties', {}).get('id')
+            if road_id:
+                road_ids.append(road_id)
+        return road_ids
+    except Exception as e:
+        print(f"Warning: Could not load road data: {e}")
+        return []
+
+# Point this to where your React app keeps the file
+GEOJSON_PATH = os.path.join("frontend", "src", "pune_roads.json")
+DECCAN_FLOOD_ZONE = load_road_cluster(GEOJSON_PATH, cluster_size=45)
+
+# 2. 1-to-Many Mapping (One node floods an entire neighborhood)
+NODE_TO_AREA = {
+    "MANHOLE-PUNE-001": DECCAN_FLOOD_ZONE
 }
-ROAD_AREA_SQM = {
-    "MG_ROAD_SEG_3": 1200.0,
-    "FC_ROAD_SEG_1": 1000.0,
-}
+
+# Assume average road segment area is 500 sqm
+AVERAGE_ROAD_AREA_SQM = 500.0
 RoadFloodStatus = Dict[str, float]
 
 
@@ -61,17 +85,21 @@ def get_network() -> FloodFeatureCollection:
     return build_dry_network()
 
 
-def calculate_road_depths(surcharging_nodes: list[dict]) -> dict:
-    """Map node surcharge volumes to road flood depths in centimeters."""
+def calculate_area_depths(surcharging_nodes: list[dict]) -> dict:
+    """Distribute surcharge volume across an entire area of roads."""
     road_depths = {}
     for node in surcharging_nodes:
-        road_id = NODE_TO_ROAD.get(node["node_id"])
-        if road_id is None:
+        impacted_roads = NODE_TO_AREA.get(node["node_id"], [])
+        if not impacted_roads:
             continue
 
-        road_area_sqm = ROAD_AREA_SQM[road_id]
-        depth_cm = node["surcharge_volume_m3"] / road_area_sqm * 100
-        road_depths[road_id] = depth_cm
+        # Total volume divided by the total area of ALL flooded roads
+        total_area_sqm = len(impacted_roads) * AVERAGE_ROAD_AREA_SQM
+        depth_cm = (node["surcharge_volume_m3"] / total_area_sqm) * 100
+        
+        # Assign this depth to every road in the cluster
+        for road_id in impacted_roads:
+            road_depths[road_id] = depth_cm
 
     return road_depths
 
@@ -103,8 +131,8 @@ def simulate(request: SimulationRequest) -> RoadFloodStatus:
             {"node_id": "MANHOLE-PUNE-002", "surcharge_volume_m3": vol_2},
         ]
         
-        # Feed the real physics into your static GIS lookup
-        return calculate_road_depths(surcharging_nodes)
+        # Feed the real physics into your area-wide distribution
+        return calculate_area_depths(surcharging_nodes)
 
     except Exception as e:
         print(f"WARNING - PySWMM Engine Failed: {e}")
@@ -114,7 +142,7 @@ def simulate(request: SimulationRequest) -> RoadFloodStatus:
             {"node_id": "MANHOLE-PUNE-001", "surcharge_volume_m3": surcharge_volume_m3},
             {"node_id": "MANHOLE-PUNE-002", "surcharge_volume_m3": 0.0},
         ]
-        return calculate_road_depths(surcharging_nodes)
+        return calculate_area_depths(surcharging_nodes)
 
 
 if __name__ == "__main__":

@@ -26,12 +26,24 @@ function getFloodStatus(depthCm) {
   return 'dry';
 }
 
+// A dark halo under a bright line reads clearly regardless of the road
+// color underneath (green/yellow/red), unlike a single mid-tone line.
+const routeHaloLayer = {
+  id: 'flood-safe-route-halo',
+  type: 'line',
+  paint: {
+    'line-width': 9,
+    'line-color': '#0f172a',
+    'line-opacity': 0.85,
+  },
+};
+
 const routeLayer = {
   id: 'flood-safe-route',
   type: 'line',
   paint: {
-    'line-width': 5,
-    'line-color': '#60a5fa',
+    'line-width': 4,
+    'line-color': '#ffffff',
     'line-dasharray': [0.2, 1.5],
   },
 };
@@ -220,6 +232,7 @@ export default function FloodNowcastMap() {
 
         {routeGeoJson && (
           <Source id="flood-safe-route" type="geojson" data={routeGeoJson}>
+            <Layer {...routeHaloLayer} />
             <Layer {...routeLayer} />
           </Source>
         )}

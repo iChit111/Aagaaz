@@ -1,0 +1,10 @@
+fastapi==0.141.1
+uvicorn==0.52.0
+pydantic==2.13.4
+pyswmm==2.1.0
+networkx==3.6.1
+rasterio==1.5.1
+pysheds==0.5  # needs the np.in1d shim in terrain.py on numpy>=2.0
+python-dotenv==1.2.3
+requests==2.34.2
+numpy==2.5.2

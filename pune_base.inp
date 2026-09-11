@@ -1,5 +1,5 @@
 [TITLE]
-Pune Deccan Gymkhana Minimal Network
+Pune Deccan Gymkhana Network
 
 [OPTIONS]
 FLOW_UNITS CMS
@@ -11,22 +11,88 @@ END_TIME 03:00:00
 
 [JUNCTIONS]
 ;;Name           Elevation  MaxDepth   InitDepth  SurDepth   Aponded
-MANHOLE-PUNE-001 560.0      1.5        0          0.3        0
-MANHOLE-PUNE-002 558.0      1.5        0          0.3        0
+J00              553.0      1.5        0          0.3        0
+J01              567.0      1.5        0          0.3        0
+J02              546.0      1.5        0          0.3        0
+J03              561.0      1.5        0          0.3        0
+J04              559.0      1.5        0          0.3        0
+J05              557.0      1.5        0          0.3        0
+J06              556.0      1.5        0          0.3        0
+J07              556.0      1.5        0          0.3        0
+J08              559.0      1.5        0          0.3        0
+J09              550.0      1.5        0          0.3        0
+J10              557.0      1.5        0          0.3        0
+J11              558.0      1.5        0          0.3        0
+J12              563.0      1.5        0          0.3        0
+J13              557.0      1.5        0          0.3        0
+J14              554.0      1.5        0          0.3        0
+J15              566.0      1.5        0          0.3        0
+J16              560.0      1.5        0          0.3        0
+J17              568.0      1.5        0          0.3        0
+J18              557.0      1.5        0          0.3        0
+J19              548.0      1.5        0          0.3        0
+J20              558.0      1.5        0          0.3        0
+J21              559.0      1.5        0          0.3        0
+J22              562.0      1.5        0          0.3        0
+J23              564.0      1.5        0          0.3        0
+J24              553.0      1.5        0          0.3        0
 
 [OUTFALLS]
 ;;Name           Elevation  Type       Stage Data       Gated
-;;-------------- ---------- ---------- ---------------- --------
-OUTFALL-001      554.0      FREE                        NO
+OUTFALL-J02      543.0      FREE                        NO
 
 [CONDUITS]
 ;;Name           Node1            Node2            Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow
-;;-------------- ---------------- ---------------- ---------- ---------- ---------- ---------- ---------- ----------
-PIPE-PUNE-001    MANHOLE-PUNE-001 MANHOLE-PUNE-002 150        0.013      0          0          0          0
-PIPE-PUNE-002    MANHOLE-PUNE-002 OUTFALL-001      100        0.013      0          0          0          0
+PIPE-J00-J19     J00              J19              293.1      0.013      0          0          0          0
+PIPE-J01-J23     J01              J23              171.0      0.013      0          0          0          0
+PIPE-J03-J21     J03              J21              157.8      0.013      0          0          0          0
+PIPE-J04-J14     J04              J14              232.7      0.013      0          0          0          0
+PIPE-J05-J09     J05              J09              263.8      0.013      0          0          0          0
+PIPE-J06-J19     J06              J19              218.5      0.013      0          0          0          0
+PIPE-J07-J24     J07              J24              265.6      0.013      0          0          0          0
+PIPE-J08-J20     J08              J20              166.8      0.013      0          0          0          0
+PIPE-J09-J02     J09              J02              313.2      0.013      0          0          0          0
+PIPE-J10-J02     J10              J02              234.0      0.013      0          0          0          0
+PIPE-J11-J18     J11              J18              189.7      0.013      0          0          0          0
+PIPE-J12-J20     J12              J20              178.4      0.013      0          0          0          0
+PIPE-J13-J19     J13              J19              184.1      0.013      0          0          0          0
+PIPE-J14-J00     J14              J00              225.1      0.013      0          0          0          0
+PIPE-J15-J23     J15              J23              163.8      0.013      0          0          0          0
+PIPE-J16-J24     J16              J24              133.7      0.013      0          0          0          0
+PIPE-J17-J23     J17              J23              167.4      0.013      0          0          0          0
+PIPE-J18-J02     J18              J02              208.3      0.013      0          0          0          0
+PIPE-J19-J02     J19              J02              791.0      0.013      0          0          0          0
+PIPE-J20-J14     J20              J14              164.0      0.013      0          0          0          0
+PIPE-J21-J13     J21              J13              164.9      0.013      0          0          0          0
+PIPE-J22-J10     J22              J10              148.3      0.013      0          0          0          0
+PIPE-J23-J08     J23              J08              143.3      0.013      0          0          0          0
+PIPE-J24-J09     J24              J09              154.4      0.013      0          0          0          0
+PIPE-J02-OUT     J02              OUTFALL-J02      50.0       0.013      0          0          0          0
 
 [XSECTIONS]
 ;;Link           Shape        Geom1      Geom2      Geom3      Geom4      Barrels
-;;-------------- ------------ ---------- ---------- ---------- ---------- ----------
-PIPE-PUNE-001    CIRCULAR     0.3        0          0          0          1
-PIPE-PUNE-002    CIRCULAR     1.5        0          0          0          1
+PIPE-J00-J19     CIRCULAR     1.07       0          0          0          1
+PIPE-J01-J23     CIRCULAR     0.50       0          0          0          1
+PIPE-J03-J21     CIRCULAR     0.28       0          0          0          1
+PIPE-J04-J14     CIRCULAR     0.31       0          0          0          1
+PIPE-J05-J09     CIRCULAR     0.47       0          0          0          1
+PIPE-J06-J19     CIRCULAR     0.43       0          0          0          1
+PIPE-J07-J24     CIRCULAR     0.32       0          0          0          1
+PIPE-J08-J20     CIRCULAR     1.08       0          0          0          1
+PIPE-J09-J02     CIRCULAR     0.78       0          0          0          1
+PIPE-J10-J02     CIRCULAR     0.41       0          0          0          1
+PIPE-J11-J18     CIRCULAR     0.66       0          0          0          1
+PIPE-J12-J20     CIRCULAR     0.27       0          0          0          1
+PIPE-J13-J19     CIRCULAR     0.50       0          0          0          1
+PIPE-J14-J00     CIRCULAR     1.32       0          0          0          1
+PIPE-J15-J23     CIRCULAR     0.31       0          0          0          1
+PIPE-J16-J24     CIRCULAR     0.23       0          0          0          1
+PIPE-J17-J23     CIRCULAR     0.52       0          0          0          1
+PIPE-J18-J02     CIRCULAR     0.45       0          0          0          1
+PIPE-J19-J02     CIRCULAR     1.50       0          0          0          1
+PIPE-J20-J14     CIRCULAR     0.86       0          0          0          1
+PIPE-J21-J13     CIRCULAR     0.40       0          0          0          1
+PIPE-J22-J10     CIRCULAR     0.26       0          0          0          1
+PIPE-J23-J08     CIRCULAR     0.72       0          0          0          1
+PIPE-J24-J09     CIRCULAR     0.43       0          0          0          1
+PIPE-J02-OUT     CIRCULAR     1.12       0          0          0          1

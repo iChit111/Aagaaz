@@ -3,7 +3,7 @@
   PYSWMM TOOLKIT API - VERSION v1.0 (2026-02-26)
   ------------------------------------------------------------
 
-  Pune Deccan Gymkhana Minimal Network 
+  Pune Deccan Gymkhana Network 
   
   ****************
   Analysis Options
@@ -32,14 +32,14 @@
   Wet Weather Inflow .......         0.000         0.000
   Groundwater Inflow .......         0.000         0.000
   RDII Inflow ..............         0.000         0.000
-  External Inflow ..........         0.380         3.803
-  External Outflow .........         0.120         1.198
-  Flooding Loss ............         0.260         2.598
+  External Inflow ..........         0.000         0.000
+  External Outflow .........         0.000         0.000
+  Flooding Loss ............         0.000         0.000
   Evaporation Loss .........         0.000         0.000
   Exfiltration Loss ........         0.000         0.000
   Initial Stored Volume ....         0.000         0.000
-  Final Stored Volume ......         0.002         0.015
-  Continuity Error (%) .....        -0.217
+  Final Stored Volume ......         0.000         0.000
+  Continuity Error (%) .....         0.000
   
   
   ********************************
@@ -55,7 +55,7 @@
   Average Time Step           :    20.00 sec
   Maximum Time Step           :    20.00 sec
   % of Time in Steady State   :     0.00
-  Average Iterations per Step :     1.01
+  Average Iterations per Step :     1.00
   % of Steps Not Converging   :     0.00
   
   
@@ -68,9 +68,32 @@
                                    Depth    Depth      HGL   Occurrence   Max Depth
   Node                 Type       Meters   Meters   Meters  days hr:min      Meters
   ---------------------------------------------------------------------------------
-  MANHOLE-PUNE-001     JUNCTION     1.50     1.50   561.50     0  00:00        1.50
-  MANHOLE-PUNE-002     JUNCTION     0.30     0.30   558.30     0  00:01        0.30
-  OUTFALL-001          OUTFALL      0.09     0.09   554.09     0  00:11        0.09
+  J00                  JUNCTION     0.00     0.00   553.00     0  00:00        0.00
+  J01                  JUNCTION     0.00     0.00   567.00     0  00:00        0.00
+  J02                  JUNCTION     0.00     0.00   546.00     0  00:00        0.00
+  J03                  JUNCTION     0.00     0.00   561.00     0  00:00        0.00
+  J04                  JUNCTION     0.00     0.00   559.00     0  00:00        0.00
+  J05                  JUNCTION     0.00     0.00   557.00     0  00:00        0.00
+  J06                  JUNCTION     0.00     0.00   556.00     0  00:00        0.00
+  J07                  JUNCTION     0.00     0.00   556.00     0  00:00        0.00
+  J08                  JUNCTION     0.00     0.00   559.00     0  00:00        0.00
+  J09                  JUNCTION     0.00     0.00   550.00     0  00:00        0.00
+  J10                  JUNCTION     0.00     0.00   557.00     0  00:00        0.00
+  J11                  JUNCTION     0.00     0.00   558.00     0  00:00        0.00
+  J12                  JUNCTION     0.00     0.00   563.00     0  00:00        0.00
+  J13                  JUNCTION     0.00     0.00   557.00     0  00:00        0.00
+  J14                  JUNCTION     0.00     0.00   554.00     0  00:00        0.00
+  J15                  JUNCTION     0.00     0.00   566.00     0  00:00        0.00
+  J16                  JUNCTION     0.00     0.00   560.00     0  00:00        0.00
+  J17                  JUNCTION     0.00     0.00   568.00     0  00:00        0.00
+  J18                  JUNCTION     0.00     0.00   557.00     0  00:00        0.00
+  J19                  JUNCTION     0.00     0.00   548.00     0  00:00        0.00
+  J20                  JUNCTION     0.00     0.00   558.00     0  00:00        0.00
+  J21                  JUNCTION     0.00     0.00   559.00     0  00:00        0.00
+  J22                  JUNCTION     0.00     0.00   562.00     0  00:00        0.00
+  J23                  JUNCTION     0.00     0.00   564.00     0  00:00        0.00
+  J24                  JUNCTION     0.00     0.00   553.00     0  00:00        0.00
+  OUTFALL-J02          OUTFALL      0.00     0.00   543.00     0  00:00        0.00
   
   
   *******************
@@ -83,23 +106,39 @@
                                    Inflow   Inflow   Occurrence      Volume      Volume       Error
   Node                 Type           CMS      CMS  days hr:min    10^6 ltr    10^6 ltr     Percent
   -------------------------------------------------------------------------------------------------
-  MANHOLE-PUNE-001     JUNCTION     0.353    0.353     0  00:00         3.8         3.8       0.000
-  MANHOLE-PUNE-002     JUNCTION     0.000    0.112     0  00:01           0         1.2       0.000
-  OUTFALL-001          OUTFALL      0.000    0.112     0  00:11           0         1.2       0.000
+  J00                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J01                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J02                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J03                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J04                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J05                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J06                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J07                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J08                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J09                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J10                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J11                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J12                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J13                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J14                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J15                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J16                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J17                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J18                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J19                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J20                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J21                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J22                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J23                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  J24                  JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr
+  OUTFALL-J02          OUTFALL      0.000    0.000     0  00:00           0           0       0.000 ltr
   
   
   *********************
   Node Flooding Summary
   *********************
   
-  Flooding refers to all water that overflows a node, whether it ponds or not.
-  --------------------------------------------------------------------------
-                                                             Total   Maximum
-                                 Maximum   Time of Max       Flood    Ponded
-                        Hours       Rate    Occurrence      Volume    Volume
-  Node                 Flooded       CMS   days hr:min    10^6 ltr   1000 m³
-  --------------------------------------------------------------------------
-  MANHOLE-PUNE-001        3.00     0.241      0  00:00       2.601     0.000
+  No nodes were flooded.
   
   
   ***********************
@@ -111,9 +150,9 @@
                          Freq      Flow      Flow      Volume
   Outfall Node           Pcnt       CMS       CMS    10^6 ltr
   -----------------------------------------------------------
-  OUTFALL-001           99.63     0.111     0.112       1.198
+  OUTFALL-J02            0.00     0.000     0.000       0.000
   -----------------------------------------------------------
-  System                99.63     0.111     0.112       1.198
+  System                 0.00     0.000     0.000       0.000
   
   
   ********************
@@ -125,22 +164,40 @@
                                   |Flow|   Occurrence   |Veloc|    Full    Full
   Link                 Type          CMS  days hr:min     m/sec    Flow   Depth
   -----------------------------------------------------------------------------
-  PIPE-PUNE-001        CONDUIT     0.112     0  00:01      1.58    1.00    1.00
-  PIPE-PUNE-002        CONDUIT     0.112     0  00:11      2.39    0.01    0.06
+  PIPE-J00-J19         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J01-J23         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J03-J21         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J04-J14         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J05-J09         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J06-J19         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J07-J24         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J08-J20         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J09-J02         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J10-J02         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J11-J18         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J12-J20         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J13-J19         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J14-J00         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J15-J23         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J16-J24         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J17-J23         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J18-J02         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J19-J02         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J20-J14         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J21-J13         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J22-J10         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J23-J08         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J24-J09         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
+  PIPE-J02-OUT         CONDUIT     0.000     0  00:00      0.00    0.00    0.00
   
   
   *************************
   Conduit Surcharge Summary
   *************************
   
-  ----------------------------------------------------------------------------
-                                                           Hours        Hours 
-                         --------- Hours Full --------   Above Full   Capacity
-  Conduit                Both Ends  Upstream  Dnstream   Normal Flow   Limited
-  ----------------------------------------------------------------------------
-  PIPE-PUNE-001               3.00      3.00      3.00      2.99         3.00
+  No conduits were surcharged.
   
 
-  Analysis begun on:  Fri Sep 11 22:20:21 2026
-  Analysis ended on:  Fri Sep 11 22:20:21 2026
+  Analysis begun on:  Sat Sep 12 00:15:53 2026
+  Analysis ended on:  Sat Sep 12 00:15:53 2026
   Total elapsed time: < 1 sec

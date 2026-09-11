@@ -5,8 +5,8 @@ from datetime import timedelta
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Dict, List
+from pydantic import BaseModel, Field
+from typing import Dict, List, Tuple
 from fastapi import HTTPException
 from pyswmm import Simulation, errors
 
@@ -17,6 +17,7 @@ from urban_flood_schema import (
     make_node,
     make_pipe,
 )
+from routing import NoRouteFound, build_road_graph, find_route
 
 
 class SimulationRequest(BaseModel):
@@ -50,6 +51,8 @@ GEOJSON_PATH = os.path.join(BASE_DIR, "frontend", "src", "pune_roads.json")
 DECCAN_FLOOD_ZONE = load_road_cluster(GEOJSON_PATH, cluster_size=15)
 
 assert DECCAN_FLOOD_ZONE, "DECCAN_FLOOD_ZONE is empty — /simulate will always return {}"
+
+ROAD_GRAPH = build_road_graph()
 
 NODE_TO_AREA = {
     "MANHOLE-PUNE-001": DECCAN_FLOOD_ZONE
@@ -176,6 +179,30 @@ def simulate(request: SimulationRequest, response: Response) -> NowcastResponse:
             {"node_id": "MANHOLE-PUNE-002", "surcharge_volume_m3": 0.0},
         ]
         return {"frames": [{"elapsed_min": 0, "depths": calculate_area_depths(surcharging_nodes)}]}
+
+
+class RouteRequest(BaseModel):
+    origin: Tuple[float, float]  # [lon, lat]
+    destination: Tuple[float, float]
+    depths: RoadFloodStatus = Field(default_factory=dict)
+
+
+class RouteResponse(BaseModel):
+    path: List[List[float]]
+    distance_m: float
+    road_ids: List[str]
+    flooded_road_ids: List[str]
+    degraded: bool
+
+
+@app.post("/route", response_model=RouteResponse)
+def route(request: RouteRequest) -> RouteResponse:
+    """Find a flood-safe path between two points, avoiding roads the
+    current nowcast frame marks as flooded wherever a detour exists."""
+    try:
+        return find_route(ROAD_GRAPH, request.origin, request.destination, request.depths)
+    except NoRouteFound as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 if __name__ == "__main__":

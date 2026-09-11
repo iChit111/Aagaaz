@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import Map, { Layer, Source } from 'react-map-gl/mapbox';
+import Map, { Layer, Source, Marker } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import puneRoadsData from './pune_roads.json';
 
@@ -25,6 +25,16 @@ function getFloodStatus(depthCm) {
   if (depthCm >= 10) return 'pooling';
   return 'dry';
 }
+
+const routeLayer = {
+  id: 'flood-safe-route',
+  type: 'line',
+  paint: {
+    'line-width': 5,
+    'line-color': '#60a5fa',
+    'line-dasharray': [0.2, 1.5],
+  },
+};
 
 // The Data-Driven Paint Rules for Roads
 const roadLayer = {
@@ -54,6 +64,12 @@ export default function FloodNowcastMap() {
   const [error, setError] = useState('');
   const [isSimulating, setIsSimulating] = useState(false);
   const [lastRun, setLastRun] = useState(null);
+
+  const [routeMode, setRouteMode] = useState(false);
+  const [routePoints, setRoutePoints] = useState([]); // [[lon, lat], ...], up to 2
+  const [route, setRoute] = useState(null);
+  const [routeError, setRouteError] = useState('');
+  const [isRouting, setIsRouting] = useState(false);
 
   const rainfallCategory = getRainfallCategory(rainfallIntensity);
   const currentFrame = frames[frameIndex];
@@ -86,6 +102,15 @@ export default function FloodNowcastMap() {
 
     return { ...puneRoadsData, features: updatedFeatures };
   }, [currentDepths]);
+
+  const routeGeoJson = useMemo(() => {
+    if (!route) return null;
+    return {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: route.path },
+      properties: {},
+    };
+  }, [route]);
 
   // Auto-advance the scrubber through the nowcast window while playing
   useEffect(() => {
@@ -128,6 +153,53 @@ export default function FloodNowcastMap() {
     }
   }
 
+  async function planRoute(origin, destination) {
+    setIsRouting(true);
+    setRouteError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin, destination, depths: currentDepths }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.detail || `Routing failed (${response.status})`);
+      }
+      setRoute(body);
+    } catch (requestError) {
+      setRoute(null);
+      setRouteError(requestError.message);
+    } finally {
+      setIsRouting(false);
+    }
+  }
+
+  function toggleRouteMode() {
+    setRouteMode((mode) => !mode);
+    setRoutePoints([]);
+    setRoute(null);
+    setRouteError('');
+  }
+
+  function handleMapClick(event) {
+    if (!routeMode) return;
+    const point = [event.lngLat.lng, event.lngLat.lat];
+
+    if (routePoints.length >= 2) {
+      setRoutePoints([point]);
+      setRoute(null);
+      setRouteError('');
+      return;
+    }
+
+    const nextPoints = [...routePoints, point];
+    setRoutePoints(nextPoints);
+    if (nextPoints.length === 2) {
+      planRoute(nextPoints[0], nextPoints[1]);
+    }
+  }
+
   return (
     <main style={styles.mapShell}>
       <Map
@@ -138,11 +210,26 @@ export default function FloodNowcastMap() {
           zoom: 14
         }}
         mapStyle={MAP_STYLE}
+        onClick={handleMapClick}
+        cursor={routeMode ? 'crosshair' : 'grab'}
       >
         {/* Render the dynamically colored roads */}
         <Source id="pune-roads" type="geojson" data={dynamicMapData}>
           <Layer {...roadLayer} />
         </Source>
+
+        {routeGeoJson && (
+          <Source id="flood-safe-route" type="geojson" data={routeGeoJson}>
+            <Layer {...routeLayer} />
+          </Source>
+        )}
+
+        {routePoints[0] && (
+          <Marker longitude={routePoints[0][0]} latitude={routePoints[0][1]} color="#22c55e" />
+        )}
+        {routePoints[1] && (
+          <Marker longitude={routePoints[1][0]} latitude={routePoints[1][1]} color="#ef4444" />
+        )}
       </Map>
 
       <section style={styles.controlPanel} aria-label="Flood simulation controls">
@@ -228,6 +315,44 @@ export default function FloodNowcastMap() {
             </div>
           </div>
         )}
+        <div style={styles.routeSection}>
+          <button
+            type="button"
+            onClick={toggleRouteMode}
+            style={{ ...styles.button, marginTop: 0, background: routeMode ? '#ef4444' : '#34d399' }}
+          >
+            {routeMode ? 'Cancel route planning' : 'Plan flood-safe route'}
+          </button>
+
+          {routeMode && routePoints.length < 2 && (
+            <p style={styles.routeHint}>
+              {routePoints.length === 0
+                ? 'Click the map to set a start point.'
+                : 'Now click a destination.'}
+            </p>
+          )}
+          {isRouting && <p style={styles.routeHint}>Finding a flood-safe path…</p>}
+          {routeError && <p role="alert" style={styles.error}>{routeError}</p>}
+
+          {route && !routeError && (
+            <div style={styles.routeSummary}>
+              <p style={styles.routeDistance}>{(route.distance_m / 1000).toFixed(2)} km</p>
+              {route.degraded ? (
+                <p style={{ ...styles.routeHint, color: '#f97316' }}>
+                  No fully dry route exists — this path still crosses {route.flooded_road_ids.length}{' '}
+                  flooded segment(s).
+                </p>
+              ) : route.flooded_road_ids.length > 0 ? (
+                <p style={{ ...styles.routeHint, color: '#eab308' }}>
+                  Avoids impassable roads, but passes {route.flooded_road_ids.length} pooling
+                  segment(s).
+                </p>
+              ) : (
+                <p style={{ ...styles.routeHint, color: '#22c55e' }}>Fully dry route.</p>
+              )}
+            </div>
+          )}
+        </div>
       </section>
 
       <aside style={styles.legend} aria-label="Flood depth legend">
@@ -267,6 +392,10 @@ const styles = {
   summary: { marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(156, 163, 175, 0.2)' },
   summaryTimestamp: { margin: '0 0 8px', color: '#6b7280', fontSize: 11 },
   summaryRow: { display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, marginTop: 8 },
+  routeSection: { marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(156, 163, 175, 0.2)' },
+  routeHint: { margin: '8px 0 0', color: '#9ca3af', fontSize: 12 },
+  routeSummary: { marginTop: 8 },
+  routeDistance: { margin: 0, fontSize: 16, fontWeight: 700 },
   timelineHeader: { display: 'flex', alignItems: 'center', gap: 10 },
   playButton: { width: 28, height: 28, flexShrink: 0, borderRadius: '50%', border: '1px solid rgba(156, 163, 175, 0.4)', background: 'transparent', color: '#f9fafb', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' },
   timelineLabel: { flex: 1, display: 'flex', justifyContent: 'space-between', color: '#d1d5db', fontSize: 12 },

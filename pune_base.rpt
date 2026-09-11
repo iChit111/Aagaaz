@@ -32,14 +32,14 @@
   Wet Weather Inflow .......         0.000         0.000
   Groundwater Inflow .......         0.000         0.000
   RDII Inflow ..............         0.000         0.000
-  External Inflow ..........         0.405         4.046
+  External Inflow ..........         0.380         3.803
   External Outflow .........         0.120         1.198
-  Flooding Loss ............         0.284         2.841
+  Flooding Loss ............         0.260         2.598
   Evaporation Loss .........         0.000         0.000
   Exfiltration Loss ........         0.000         0.000
   Initial Stored Volume ....         0.000         0.000
   Final Stored Volume ......         0.002         0.015
-  Continuity Error (%) .....        -0.209
+  Continuity Error (%) .....        -0.217
   
   
   ********************************
@@ -83,7 +83,7 @@
                                    Inflow   Inflow   Occurrence      Volume      Volume       Error
   Node                 Type           CMS      CMS  days hr:min    10^6 ltr    10^6 ltr     Percent
   -------------------------------------------------------------------------------------------------
-  MANHOLE-PUNE-001     JUNCTION     0.375    0.375     0  00:00        4.05        4.05       0.000
+  MANHOLE-PUNE-001     JUNCTION     0.353    0.353     0  00:00         3.8         3.8       0.000
   MANHOLE-PUNE-002     JUNCTION     0.000    0.112     0  00:01           0         1.2       0.000
   OUTFALL-001          OUTFALL      0.000    0.112     0  00:11           0         1.2       0.000
   
@@ -99,7 +99,7 @@
                         Hours       Rate    Occurrence      Volume    Volume
   Node                 Flooded       CMS   days hr:min    10^6 ltr   1000 m³
   --------------------------------------------------------------------------
-  MANHOLE-PUNE-001        3.00     0.263      0  00:00       2.844     0.000
+  MANHOLE-PUNE-001        3.00     0.241      0  00:00       2.601     0.000
   
   
   ***********************
@@ -141,6 +141,6 @@
   PIPE-PUNE-001               3.00      3.00      3.00      2.99         3.00
   
 
-  Analysis begun on:  Fri Sep 11 12:15:32 2026
-  Analysis ended on:  Fri Sep 11 12:15:32 2026
+  Analysis begun on:  Fri Sep 11 22:20:21 2026
+  Analysis ended on:  Fri Sep 11 22:20:21 2026
   Total elapsed time: < 1 sec

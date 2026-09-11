@@ -32,14 +32,14 @@
   Wet Weather Inflow .......         0.000         0.000
   Groundwater Inflow .......         0.000         0.000
   RDII Inflow ..............         0.000         0.000
-  External Inflow ..........         0.135         1.346
-  External Outflow .........         0.132         1.317
-  Flooding Loss ............         0.000         0.000
+  External Inflow ..........         0.127         1.265
+  External Outflow .........         0.039         0.394
+  Flooding Loss ............         0.086         0.864
   Evaporation Loss .........         0.000         0.000
   Exfiltration Loss ........         0.000         0.000
   Initial Stored Volume ....         0.000         0.000
-  Final Stored Volume ......         0.003         0.035
-  Continuity Error (%) .....        -0.382
+  Final Stored Volume ......         0.002         0.015
+  Continuity Error (%) .....        -0.652
   
   
   ********************************
@@ -55,7 +55,7 @@
   Average Time Step           :    20.00 sec
   Maximum Time Step           :    20.00 sec
   % of Time in Steady State   :     0.00
-  Average Iterations per Step :     1.12
+  Average Iterations per Step :     1.03
   % of Steps Not Converging   :     0.00
   
   
@@ -68,9 +68,9 @@
                                    Depth    Depth      HGL   Occurrence   Max Depth
   Node                 Type       Meters   Meters   Meters  days hr:min      Meters
   ---------------------------------------------------------------------------------
-  MANHOLE-PUNE-001     JUNCTION     0.22     0.22   560.22     0  00:00        0.22
-  MANHOLE-PUNE-002     JUNCTION     0.22     0.22   558.22     0  00:17        0.22
-  OUTFALL-001          OUTFALL      0.16     0.17   554.17     0  00:17        0.17
+  MANHOLE-PUNE-001     JUNCTION     1.50     1.50   561.50     0  00:00        1.50
+  MANHOLE-PUNE-002     JUNCTION     0.30     0.30   558.30     0  00:01        0.30
+  OUTFALL-001          OUTFALL      0.09     0.09   554.09     0  00:11        0.09
   
   
   *******************
@@ -83,16 +83,23 @@
                                    Inflow   Inflow   Occurrence      Volume      Volume       Error
   Node                 Type           CMS      CMS  days hr:min    10^6 ltr    10^6 ltr     Percent
   -------------------------------------------------------------------------------------------------
-  MANHOLE-PUNE-001     JUNCTION     0.375    0.375     0  00:00        1.35        1.35       0.000
-  MANHOLE-PUNE-002     JUNCTION     0.000    0.375     0  00:17           0        1.33       0.000
-  OUTFALL-001          OUTFALL      0.000    0.375     0  00:17           0        1.32       0.000
+  MANHOLE-PUNE-001     JUNCTION     0.353    0.353     0  00:00        1.27        1.27      -0.000
+  MANHOLE-PUNE-002     JUNCTION     0.000    0.112     0  00:01           0       0.398       0.000
+  OUTFALL-001          OUTFALL      0.000    0.112     0  00:11           0       0.394       0.000
   
   
   *********************
   Node Flooding Summary
   *********************
   
-  No nodes were flooded.
+  Flooding refers to all water that overflows a node, whether it ponds or not.
+  --------------------------------------------------------------------------
+                                                             Total   Maximum
+                                 Maximum   Time of Max       Flood    Ponded
+                        Hours       Rate    Occurrence      Volume    Volume
+  Node                 Flooded       CMS   days hr:min    10^6 ltr   1000 m³
+  --------------------------------------------------------------------------
+  MANHOLE-PUNE-001        1.00     0.241      0  00:00       0.867     0.000
   
   
   ***********************
@@ -104,9 +111,9 @@
                          Freq      Flow      Flow      Volume
   Outfall Node           Pcnt       CMS       CMS    10^6 ltr
   -----------------------------------------------------------
-  OUTFALL-001           98.89     0.371     0.375       1.316
+  OUTFALL-001           98.89     0.111     0.112       0.394
   -----------------------------------------------------------
-  System                98.89     0.371     0.375       1.316
+  System                98.89     0.111     0.112       0.394
   
   
   ********************
@@ -118,17 +125,22 @@
                                   |Flow|   Occurrence   |Veloc|    Full    Full
   Link                 Type          CMS  days hr:min     m/sec    Flow   Depth
   -----------------------------------------------------------------------------
-  PIPE-PUNE-001        CONDUIT     0.375     0  00:17      2.36    0.05    0.15
-  PIPE-PUNE-002        CONDUIT     0.375     0  00:17      3.45    0.03    0.11
+  PIPE-PUNE-001        CONDUIT     0.112     0  00:01      1.58    1.00    1.00
+  PIPE-PUNE-002        CONDUIT     0.112     0  00:11      2.39    0.01    0.06
   
   
   *************************
   Conduit Surcharge Summary
   *************************
   
-  No conduits were surcharged.
+  ----------------------------------------------------------------------------
+                                                           Hours        Hours 
+                         --------- Hours Full --------   Above Full   Capacity
+  Conduit                Both Ends  Upstream  Dnstream   Normal Flow   Limited
+  ----------------------------------------------------------------------------
+  PIPE-PUNE-001               1.00      1.00      1.00      0.99         1.00
   
 
-  Analysis begun on:  Fri Sep 11 11:21:43 2026
-  Analysis ended on:  Fri Sep 11 11:21:43 2026
+  Analysis begun on:  Fri Sep 11 11:59:41 2026
+  Analysis ended on:  Fri Sep 11 11:59:41 2026
   Total elapsed time: < 1 sec

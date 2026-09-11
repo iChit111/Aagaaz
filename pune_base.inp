@@ -11,9 +11,8 @@ END_TIME 01:00:00
 
 [JUNCTIONS]
 ;;Name           Elevation  MaxDepth   InitDepth  SurDepth   Aponded
-;;-------------- ---------- ---------- ---------- ---------- ----------
-MANHOLE-PUNE-001 560.0      3.0        0          10         0
-MANHOLE-PUNE-002 558.0      3.0        0          10         0
+MANHOLE-PUNE-001 560.0      1.5        0          0.3        0
+MANHOLE-PUNE-002 558.0      1.5        0          0.3        0
 
 [OUTFALLS]
 ;;Name           Elevation  Type       Stage Data       Gated
@@ -29,5 +28,5 @@ PIPE-PUNE-002    MANHOLE-PUNE-002 OUTFALL-001      100        0.013      0      
 [XSECTIONS]
 ;;Link           Shape        Geom1      Geom2      Geom3      Geom4      Barrels
 ;;-------------- ------------ ---------- ---------- ---------- ---------- ----------
-PIPE-PUNE-001    CIRCULAR     1.5        0          0          0          1
+PIPE-PUNE-001    CIRCULAR     0.3        0          0          0          1
 PIPE-PUNE-002    CIRCULAR     1.5        0          0          0          1

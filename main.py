@@ -1,11 +1,15 @@
 """FastAPI backend for the urban flood nowcasting API."""
 
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict
 from fastapi import HTTPException
 from pyswmm import Simulation, errors
+
+logger = logging.getLogger(__name__)
 
 from urban_flood_schema import (
     FloodFeatureCollection,
@@ -42,7 +46,7 @@ def load_road_cluster(filepath: str, cluster_size: int = 40):
 # Anchor to this file's location, not the process's cwd.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 GEOJSON_PATH = os.path.join(BASE_DIR, "frontend", "src", "pune_roads.json")
-DECCAN_FLOOD_ZONE = load_road_cluster(GEOJSON_PATH, cluster_size=45)
+DECCAN_FLOOD_ZONE = load_road_cluster(GEOJSON_PATH, cluster_size=5)
 
 assert DECCAN_FLOOD_ZONE, "DECCAN_FLOOD_ZONE is empty — /simulate will always return {}"
 
@@ -107,12 +111,12 @@ def calculate_area_depths(surcharging_nodes: list[dict]) -> dict:
 
 
 @app.post("/simulate", response_model=RoadFloodStatus)
-def simulate(request: SimulationRequest) -> RoadFloodStatus:
+def simulate(request: SimulationRequest, response: Response) -> RoadFloodStatus:
     """Run PySWMM and map physical surcharge volumes to road depths."""
     try:
         from pyswmm import Simulation, Nodes
-        
-        with Simulation("pune_base.inp") as sim:
+
+        with Simulation(os.path.join(BASE_DIR, "pune_base.inp")) as sim:
             manhole_1 = Nodes(sim)["MANHOLE-PUNE-001"]
             manhole_2 = Nodes(sim)["MANHOLE-PUNE-002"]
             
@@ -136,8 +140,9 @@ def simulate(request: SimulationRequest) -> RoadFloodStatus:
         # Feed the real physics into your area-wide distribution
         return calculate_area_depths(surcharging_nodes)
 
-    except Exception as e:
-        print(f"WARNING - PySWMM Engine Failed: {e}")
+    except Exception:
+        logger.exception("PySWMM engine failed; falling back to mock flood data")
+        response.headers["X-Engine-Status"] = "fallback"
         # Bulletproof Fallback: Use the mock logic you already wrote!
         surcharge_volume_m3 = 5000.0 if request.rainfall_mm_per_hr > 50 else 0.0
         surcharging_nodes = [

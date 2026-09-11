@@ -36,8 +36,8 @@ export default function FloodNowcastMap() {
   const dynamicMapData = useMemo(() => {
     const updatedFeatures = puneRoadsData.features.map(feature => {
       // Overpass Turbo usually assigns OSM IDs as strings like "way/12345"
-      const roadId = feature.id || feature.properties.id; 
-      const currentDepth = roadDepths[roadId] || 0; 
+      const roadId = feature.id ?? feature.properties?.id;
+      const currentDepth = roadId == null ? 0 : roadDepths[String(roadId)] ?? 0;
       
       return {
         ...feature,
@@ -47,6 +47,8 @@ export default function FloodNowcastMap() {
         }
       };
     });
+
+    console.log(updatedFeatures[0]?.properties);
 
     return { ...puneRoadsData, features: updatedFeatures };
   }, [roadDepths]);

@@ -137,7 +137,7 @@ def simulate(request: SimulationRequest) -> RoadFloodStatus:
     except Exception as e:
         print(f"WARNING - PySWMM Engine Failed: {e}")
         # Bulletproof Fallback: Use the mock logic you already wrote!
-        surcharge_volume_m3 = 184.8 if request.rainfall_mm_per_hr > 50 else 0.0
+        surcharge_volume_m3 = 5000.0 if request.rainfall_mm_per_hr > 50 else 0.0
         surcharging_nodes = [
             {"node_id": "MANHOLE-PUNE-001", "surcharge_volume_m3": surcharge_volume_m3},
             {"node_id": "MANHOLE-PUNE-002", "surcharge_volume_m3": 0.0},

@@ -1,0 +1,29 @@
+[TITLE]
+Pune Deccan Gymkhana Minimal Network
+
+[OPTIONS]
+FLOW_UNITS CMS
+ROUTING_MODEL KINWAVE
+
+[NODES]
+;;Name           Elevation  MaxDepth   InitDepth  SurDepth   Aponded
+;;-------------- ---------- ---------- ---------- ---------- ----------
+MANHOLE-PUNE-001 560.0      3.0        0          10         0
+MANHOLE-PUNE-002 558.0      3.0        0          10         0
+
+[OUTFALLS]
+;;Name           Elevation  Type       Stage Data       Gated
+;;-------------- ---------- ---------- ---------------- --------
+OUTFALL-001      554.0      FREE                        NO
+
+[CONDUITS]
+;;Name           Node1            Node2            Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow
+;;-------------- ---------------- ---------------- ---------- ---------- ---------- ---------- ---------- ----------
+PIPE-PUNE-001    MANHOLE-PUNE-001 MANHOLE-PUNE-002 150        0.013      0          0          0          0
+PIPE-PUNE-002    MANHOLE-PUNE-002 OUTFALL-001      100        0.013      0          0          0          0
+
+[XSECTIONS]
+;;Link           Shape        Geom1      Geom2      Geom3      Geom4      Barrels
+;;-------------- ------------ ---------- ---------- ---------- ---------- ----------
+PIPE-PUNE-001    CIRCULAR     1.5        0          0          0          1
+PIPE-PUNE-002    CIRCULAR     1.5        0          0          0          1

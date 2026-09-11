@@ -22,29 +22,30 @@ class SimulationRequest(BaseModel):
 import json
 import os
 
-# 1. Automate the Area Extraction
 def load_road_cluster(filepath: str, cluster_size: int = 40):
-    """Reads the GeoJSON and grabs a contiguous block of roads to act as our flood area."""
     try:
         with open(filepath, 'r') as f:
             data = json.load(f)
-        
-        # Extract the IDs of the first N roads (Overpass returns them spatially clustered)
         road_ids = []
         for feature in data.get('features', [])[:cluster_size]:
             road_id = feature.get('id') or feature.get('properties', {}).get('id')
             if road_id:
                 road_ids.append(road_id)
+        if not road_ids:
+            print(f"WARNING: {filepath} loaded but produced zero road IDs.")
         return road_ids
     except Exception as e:
-        print(f"Warning: Could not load road data: {e}")
-        return []
+        # Fail loudly at startup — this should never be silently swallowed,
+        # because an empty flood zone makes /simulate a permanent no-op.
+        raise RuntimeError(f"Could not load road cluster from {filepath}: {e}") from e
 
-# Point this to where your React app keeps the file
-GEOJSON_PATH = os.path.join("frontend", "src", "pune_roads.json")
+# Anchor to this file's location, not the process's cwd.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GEOJSON_PATH = os.path.join(BASE_DIR, "frontend", "src", "pune_roads.json")
 DECCAN_FLOOD_ZONE = load_road_cluster(GEOJSON_PATH, cluster_size=45)
 
-# 2. 1-to-Many Mapping (One node floods an entire neighborhood)
+assert DECCAN_FLOOD_ZONE, "DECCAN_FLOOD_ZONE is empty — /simulate will always return {}"
+
 NODE_TO_AREA = {
     "MANHOLE-PUNE-001": DECCAN_FLOOD_ZONE
 }
@@ -52,7 +53,6 @@ NODE_TO_AREA = {
 # Assume average road segment area is 500 sqm
 AVERAGE_ROAD_AREA_SQM = 500.0
 RoadFloodStatus = Dict[str, float]
-
 
 app = FastAPI(title="Urban Flood Nowcasting API")
 app.add_middleware(

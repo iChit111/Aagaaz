@@ -3,9 +3,13 @@ Pune Deccan Gymkhana Minimal Network
 
 [OPTIONS]
 FLOW_UNITS CMS
-ROUTING_MODEL KINWAVE
+FLOW_ROUTING KINWAVE
+START_DATE 01/01/2026
+START_TIME 00:00:00
+END_DATE 01/01/2026
+END_TIME 01:00:00
 
-[NODES]
+[JUNCTIONS]
 ;;Name           Elevation  MaxDepth   InitDepth  SurDepth   Aponded
 ;;-------------- ---------- ---------- ---------- ---------- ----------
 MANHOLE-PUNE-001 560.0      3.0        0          10         0

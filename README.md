@@ -10,6 +10,24 @@ Urban flood simulation and flood-safe routing for Deccan Gymkhana, Pune. The pro
 - Finds a route between two map points while avoiding flooded roads where a detour exists.
 - Serves a synthetic spatial rainfall nowcast through the API. The integration point for a live radar feed is in `nowcast.py`.
 
+## How it works
+
+Data prep (run ahead of time, produces the files the API loads at startup):
+
+- **`dem.py`** — Downloads the SRTM 30m elevation tile for the AOI from OpenTopography and caches it locally as a GeoTIFF.
+- **`generate_network.py`** — Picks 25 real street intersections from the road graph (`routing.py`), looks up their DEM elevation, and connects each to its nearest downhill neighbor to build a plausible drainage pipe network. Writes `pune_base.inp` (SWMM input) and `network_topology.py` (junction coordinates).
+- **`terrain.py`** — Uses **pysheds** to condition the DEM (fills pits/depressions, resolves flats), compute D8 flow direction and flow accumulation, then delineates each junction's contributing catchment (the patch of land that drains into it). Catchments are capped to a 200m radius around each junction so they stay street-scale rather than growing into a regional watershed. Saves the results to `data/catchments.npz`.
+
+Runtime (what happens on each `/simulate` call):
+
+1. **`nowcast.py`** — No live radar feed is available, so this generates a synthetic rainstorm: a drifting, bell-shaped intensity blob queryable at any point and time over the 0-3hr window.
+2. **`runoff.py`** — Averages that synthetic rainfall over each junction's catchment (from `terrain.py`) and converts it into a volumetric inflow rate (m³/s) using a runoff coefficient (0.9, concrete-heavy urban assumption).
+3. **PySWMM** — `main.py`'s `/simulate` endpoint feeds each junction's inflow into PySWMM every timestep. PySWMM (a real EPA SWMM hydraulics engine) routes the water through the pipe network and determines when a junction's capacity is exceeded, exposing the overflow as `node.statistics["flooding_volume"]`. This overflow math itself is entirely inside PySWMM — this project only supplies inflow and reads the result back out. If PySWMM throws an exception, a fallback hardcodes surcharge at every junction above a rainfall threshold so the demo still shows something (flagged via the `X-Engine-Status: fallback` header).
+4. **`flood_fill.py`** — Turns each junction's overflow volume into a street-level puddle: starting from the junction's location on the DEM, it fills in the lowest neighboring terrain cells first (a "bathtub fill" / priority-flood), stopping once the pooled volume matches the overflow. It then checks which road vertices (from `frontend/src/pune_roads.json`) fall inside the puddle to report per-road depth in cm.
+5. **`routing.py`** — Builds a graph from the same road GeoJSON and finds a route with **Dijkstra's shortest-path algorithm** (via NetworkX), with edge weights adjusted by current flood depth: roads ≥30cm are excluded entirely wherever a dry detour exists, roads ≥10cm are heavily penalized (×6) but passable, and if no dry route exists at all it falls back to allowing flooded roads (penalized ×50) and flags the result `degraded: true`.
+
+In one sentence: fake rain falls on real terrain → hydrology math (pysheds) computes how much water reaches each drain → a real hydraulics engine (PySWMM) simulates the pipes backing up → the overflow is spread across the DEM as a virtual puddle → nearby streets get marked flooded → Dijkstra-based routing avoids those streets.
+
 ## Project structure
 
 ```text

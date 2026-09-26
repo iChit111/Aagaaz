@@ -396,29 +396,28 @@ def generate_dataset(
                     if rid in road_id_to_idx:
                         road_depth_matrix[t_idx, road_id_to_idx[rid]] = depth
 
-            # Static pipe features for this perturbation
-            pipe_ids = [c["pipe_id"] for c in network["conduits"]]
+            # Pipe topology and static edge features
+            node_to_idx = {nid: j for j, nid in enumerate(node_ids)}
+            valid_conduits = [
+                c for c in network["conduits"]
+                if c["from_node"] in node_to_idx and c["to_node"] in node_to_idx
+            ]
+            pipe_ids = [c["pipe_id"] for c in valid_conduits]
             pipe_diameters = np.array(
-                [c["diameter_m"] for c in network["conduits"]], dtype=np.float32
+                [c["diameter_m"] for c in valid_conduits], dtype=np.float32
             )
             pipe_lengths = np.array(
-                [c["length_m"] for c in network["conduits"]], dtype=np.float32
+                [c["length_m"] for c in valid_conduits], dtype=np.float32
             )
             pipe_mannings = np.array(
-                [c["mannings_n"] for c in network["conduits"]], dtype=np.float32
+                [c["mannings_n"] for c in valid_conduits], dtype=np.float32
             )
             pipe_slopes = np.array(
-                [c["slope"] for c in network["conduits"]], dtype=np.float32
+                [c["slope"] for c in valid_conduits], dtype=np.float32
             )
 
-            # Pipe topology as edge index (from_idx, to_idx) into node_ids
-            node_to_idx = {nid: j for j, nid in enumerate(node_ids)}
-            edge_from = []
-            edge_to = []
-            for c in network["conduits"]:
-                if c["from_node"] in node_to_idx and c["to_node"] in node_to_idx:
-                    edge_from.append(node_to_idx[c["from_node"]])
-                    edge_to.append(node_to_idx[c["to_node"]])
+            edge_from = [node_to_idx[c["from_node"]] for c in valid_conduits]
+            edge_to = [node_to_idx[c["to_node"]] for c in valid_conduits]
             edge_index = np.array([edge_from, edge_to], dtype=np.int64)
 
             # Junction elevations (ordered by node_ids)

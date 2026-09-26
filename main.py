@@ -4,8 +4,9 @@ import logging
 from dataclasses import replace
 from datetime import timedelta
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, UploadFile, File, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel, Field
 from typing import Dict, List, Tuple
 from fastapi import HTTPException
@@ -24,8 +25,10 @@ from nowcast import DEFAULT_STORM, sample_grid
 from dem import AOI_BOUNDS
 from runoff import CatchmentRunoff
 from flood_fill import FloodExtentEstimator
+from dimension_ingest import ingest_survey
 
 import os
+import tempfile
 
 
 class SimulationRequest(BaseModel):
@@ -234,7 +237,97 @@ def route(request: RouteRequest) -> RouteResponse:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+# ---------------------------------------------------------------------------
+# Admin: pipe survey upload
+# ---------------------------------------------------------------------------
+# Protect the admin endpoint with a simple API key (set ADMIN_API_KEY in .env).
+# Government operators hit this endpoint; the system does the rest.
+# ---------------------------------------------------------------------------
+_ADMIN_KEY_HEADER = APIKeyHeader(name="X-Admin-Key", auto_error=False)
+_ADMIN_KEY = os.getenv("ADMIN_API_KEY", "")
+
+
+def _require_admin(key: str = Security(_ADMIN_KEY_HEADER)) -> None:
+    if not _ADMIN_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin API key not configured on this server (set ADMIN_API_KEY in .env).",
+        )
+    if key != _ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key.")
+
+
+class DimensionUpdateResponse(BaseModel):
+    rows_parsed: int
+    changes_applied: int
+    warnings: List[str]
+    errors: List[str]
+    backup_path: str | None
+    dry_run: bool
+    message: str
+
+
+@app.post(
+    "/admin/update-dimensions",
+    response_model=DimensionUpdateResponse,
+    summary="Upload a pipe survey CSV to update drainage dimensions",
+    description=(
+        "Accepts a CSV with columns: pipe_id, diameter_mm, shape (optional), "
+        "material (optional), condition (optional), survey_date (optional), surveyor (optional). "
+        "Validates the data, shows what will change, writes a versioned backup of pune_base.inp, "
+        "patches pipe diameters and Manning's roughness, and triggers recalibration. "
+        "Requires X-Admin-Key header."
+    ),
+)
+async def update_dimensions(
+    file: UploadFile = File(..., description="Pipe survey CSV file"),
+    dry_run: bool = False,
+    _: None = Depends(_require_admin),
+) -> DimensionUpdateResponse:
+    """Government-facing endpoint: upload a surveyed pipe dimension CSV.
+
+    The system diffs the CSV against the current network, applies changes,
+    keeps a timestamped backup, and writes an audit log — no SWMM or Python
+    knowledge required on the operator's side.
+    """
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=422, detail="Uploaded file must be a .csv")
+
+    # Write the upload to a temp file so dimension_ingest can read it normally.
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False, mode="wb") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        result = ingest_survey(tmp_path, dry_run=dry_run, run_recalibration=not dry_run)
+    finally:
+        os.unlink(tmp_path)
+
+    changes_applied = len(result["changes"]) if not dry_run else 0
+    message = (
+        f"Dry run: {len(result['changes'])} change(s) would be applied."
+        if dry_run
+        else (
+            f"{changes_applied} change(s) applied. Backup: {result['backup_path']}"
+            if changes_applied
+            else "No changes — network already matches the survey data."
+        )
+    )
+
+    return DimensionUpdateResponse(
+        rows_parsed=result["rows_parsed"],
+        changes_applied=changes_applied,
+        warnings=result["warnings"],
+        errors=result["errors"],
+        backup_path=result["backup_path"],
+        dry_run=dry_run,
+        message=message,
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+

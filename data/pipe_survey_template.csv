@@ -1,0 +1,5 @@
+pipe_id,diameter_mm,shape,material,condition,survey_date,surveyor
+PIPE-J00-J19,900,CIRCULAR,RCC,fair,2026-09-20,A. Kulkarni
+PIPE-J01-J23,600,CIRCULAR,concrete,good,2026-09-20,A. Kulkarni
+PIPE-J03-J21,300,CIRCULAR,PVC,good,2026-09-21,R. Desai
+PIPE-J04-J14,350,CIRCULAR,concrete,poor,2026-09-21,R. Desai

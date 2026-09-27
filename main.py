@@ -326,8 +326,85 @@ async def update_dimensions(
     )
 
 
+# ---------------------------------------------------------------------------
+# GNN inference endpoint
+# ---------------------------------------------------------------------------
+# Drop-in replacement for /simulate using the trained FloodGNN.
+# Returns the same NowcastResponse format so the frontend works unchanged.
+# The predictor is loaded lazily on first request — if no checkpoint exists,
+# the endpoint returns a clear error instead of crashing the server.
+# ---------------------------------------------------------------------------
+
+_gnn_predictor = None
+_GNN_CHECKPOINT = os.path.join(BASE_DIR, "checkpoints", "flood_gnn_best.pt")
+
+
+def _get_gnn_predictor():
+    """Lazily load the GNN predictor on first call."""
+    global _gnn_predictor
+    if _gnn_predictor is None:
+        if not os.path.exists(_GNN_CHECKPOINT):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"GNN checkpoint not found at {_GNN_CHECKPOINT}. "
+                    "Run: python3 generate_training_data.py && python3 -m gnn.train"
+                ),
+            )
+        from gnn.inference import FloodGNNPredictor
+        _gnn_predictor = FloodGNNPredictor(_GNN_CHECKPOINT)
+    return _gnn_predictor
+
+
+@app.post("/simulate_gnn", response_model=NowcastResponse)
+def simulate_gnn(request: SimulationRequest, response: Response) -> NowcastResponse:
+    """GNN-powered flood nowcast: ~50ms inference vs ~2s for SWMM.
+
+    Uses the trained FloodGNN to predict per-node surcharge volumes,
+    then pipes them through the same bathtub-fill post-processing
+    (flood_fill.py) as /simulate for per-road flood depths.
+
+    Returns the same NowcastResponse format as /simulate — the frontend
+    can switch between them without any code changes.
+    """
+    import time as _time
+
+    t0 = _time.perf_counter()
+
+    try:
+        predictor = _get_gnn_predictor()
+        gnn_frames = predictor.predict(rainfall_mm_hr=request.rainfall_mm_per_hr)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("GNN inference failed")
+        raise HTTPException(status_code=500, detail="GNN inference failed")
+
+    t_gnn = _time.perf_counter()
+
+    # Post-process: map predicted surcharge volumes → road-level flood depths
+    # using the same bathtub-fill as /simulate
+    frames: list[dict] = []
+    for gnn_frame in gnn_frames:
+        surcharging_nodes = [
+            {"node_id": nid, "surcharge_volume_m3": vol}
+            for nid, vol in gnn_frame["node_surcharges"].items()
+        ]
+        depths = calculate_area_depths(surcharging_nodes)
+        frames.append({
+            "elapsed_min": gnn_frame["elapsed_min"],
+            "depths": depths,
+        })
+
+    t_total = _time.perf_counter()
+    response.headers["X-Engine"] = "gnn"
+    response.headers["X-GNN-Inference-Ms"] = f"{(t_gnn - t0) * 1000:.1f}"
+    response.headers["X-Total-Ms"] = f"{(t_total - t0) * 1000:.1f}"
+
+    return {"frames": frames}
+
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
-

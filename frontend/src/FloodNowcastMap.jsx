@@ -145,7 +145,7 @@ export default function FloodNowcastMap() {
     setError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/simulate`, {
+      const response = await fetch(`${API_BASE_URL}/simulate_gnn`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rainfall_mm_per_hr: rainfallIntensity }),

@@ -157,9 +157,10 @@ class FloodGNNPredictor:
         self._model = FloodGNN(
             n_node_feat=ckpt.get("n_node_feat", 4),
             n_edge_feat=ckpt.get("n_edge_feat", 4),
-            hidden_dim=ckpt.get("hidden_dim", 64),
+            hidden_dim=ckpt.get("hidden_dim", 128),
             n_mp_layers=ckpt.get("n_mp_layers", 3),
             dropout=ckpt.get("dropout", 0.1),
+            log_targets=ckpt.get("log_targets", True),
         ).to(self._device)
         self._model.load_state_dict(ckpt["model_state_dict"])
         self._model.eval()
@@ -215,7 +216,11 @@ class FloodGNNPredictor:
         )
 
         # Edge features: diameter, log(length), slope, Manning's n
+        # And compute per-node derived capacity features simultaneously
         edge_feats = []
+        min_pipe_diam = np.full(self._N, 1.0, dtype=np.float32)
+        total_pipe_capacity = np.zeros(self._N, dtype=np.float32)
+        
         for c in valid_conduits:
             xs = network["xsections"].get(c["pipe_id"], {})
             diameter = xs.get("geom1", 0.5)  # default 0.5m
@@ -224,11 +229,21 @@ class FloodGNNPredictor:
             to_elev = network["elevations"].get(c["to_node"], 0.0)
             slope = abs(from_elev - to_elev) / max(length, 0.1)
             mannings_n = 0.013  # concrete default
+            
+            capacity = (diameter ** (8.0 / 3.0)) / mannings_n * (max(slope, 1e-4) ** 0.5)
+            src_idx = node_to_idx[c["from_node"]]
+            dst_idx = node_to_idx[c["to_node"]]
+            for node_idx in (src_idx, dst_idx):
+                min_pipe_diam[node_idx] = min(min_pipe_diam[node_idx], diameter)
+                total_pipe_capacity[node_idx] += capacity
+                
             edge_feats.append([diameter, math.log1p(length), slope, mannings_n])
 
         self._edge_attr = torch.tensor(
             edge_feats, dtype=torch.float32, device=self._device,
         )
+        self._min_pipe_diam = min_pipe_diam
+        self._pipe_capacity_log = np.log1p(total_pipe_capacity)
 
         logger.info(
             "Inference ready: %d nodes, %d edges, %d timesteps",
@@ -276,13 +291,15 @@ class FloodGNNPredictor:
                 dt_hr = (t_min - ELAPSED_MINUTES[t_idx - 1]) / 60.0
                 cumulative_rainfall += rainfall * dt_hr
 
-            # Node features: (N, 4)
+            # Node features: (N, 6)
             x = torch.tensor(
                 np.column_stack([
                     self._elev_norm,
                     self._catchment_log,
                     rainfall,
                     cumulative_rainfall,
+                    self._min_pipe_diam,
+                    self._pipe_capacity_log,
                 ]),
                 dtype=torch.float32,
                 device=self._device,

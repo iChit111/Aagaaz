@@ -4,10 +4,11 @@ Urban flood simulation and flood-safe routing for Deccan Gymkhana, Pune. The pro
 
 ## What it does
 
-- Simulates a 0-3 hour storm for a configurable rainfall intensity.
+- Simulates a 0-3 hour storm for a configurable rainfall intensity using either a full PySWMM engine or an accelerated AI surrogate (GNN).
 - Converts drainage-network surcharge into estimated street-level flood depths.
 - Displays roads as dry, pooling, or impassable on an interactive map.
 - Finds a route between two map points while avoiding flooded roads where a detour exists.
+- Allows admins/engineers to dynamically ingest pipe surveys via CSV, updating the live model on the fly.
 - Serves a synthetic spatial rainfall nowcast through the API. The integration point for a live radar feed is in `nowcast.py`.
 
 ## How it works
@@ -22,7 +23,9 @@ Runtime (what happens on each `/simulate` call):
 
 1. **`nowcast.py`** — No live radar feed is available, so this generates a synthetic rainstorm: a drifting, bell-shaped intensity blob queryable at any point and time over the 0-3hr window.
 2. **`runoff.py`** — Averages that synthetic rainfall over each junction's catchment (from `terrain.py`) and converts it into a volumetric inflow rate (m³/s) using a runoff coefficient (0.9, concrete-heavy urban assumption).
-3. **PySWMM** — `main.py`'s `/simulate` endpoint feeds each junction's inflow into PySWMM every timestep. PySWMM (a real EPA SWMM hydraulics engine) routes the water through the pipe network and determines when a junction's capacity is exceeded, exposing the overflow as `node.statistics["flooding_volume"]`. This overflow math itself is entirely inside PySWMM — this project only supplies inflow and reads the result back out. If PySWMM throws an exception, a fallback hardcodes surcharge at every junction above a rainfall threshold so the demo still shows something (flagged via the `X-Engine-Status: fallback` header).
+3. **Simulation (PySWMM or AI)** — `main.py` provides two endpoints for routing the water:
+   - `/simulate`: The legacy engine. Feeds inflow into PySWMM every timestep to solve the Saint-Venant equations. Extremely accurate, but slow (~2 seconds per request).
+   - `/simulate_gnn`: The AI engine. Uses a trained Spatio-Temporal Graph Neural Network (GNN) to predict the identical overflow patterns in < 150ms. Highly scalable for simultaneous users.
 4. **`flood_fill.py`** — Turns each junction's overflow volume into a street-level puddle: starting from the junction's location on the DEM, it fills in the lowest neighboring terrain cells first (a "bathtub fill" / priority-flood), stopping once the pooled volume matches the overflow. It then checks which road vertices (from `frontend/src/pune_roads.json`) fall inside the puddle to report per-road depth in cm.
 5. **`routing.py`** — Builds a graph from the same road GeoJSON and finds a route with **Dijkstra's shortest-path algorithm** (via NetworkX), with edge weights adjusted by current flood depth: roads ≥30cm are excluded entirely wherever a dry detour exists, roads ≥10cm are heavily penalized (×6) but passable, and if no dry route exists at all it falls back to allowing flooded roads (penalized ×50) and flags the result `degraded: true`.
 
@@ -32,14 +35,17 @@ In one sentence: fake rain falls on real terrain → hydrology math (pysheds) co
 
 ```text
 main.py                 FastAPI application
+dimension_ingest.py     Dynamic pipe dimension updates
 nowcast.py              Synthetic rainfall nowcast
 runoff.py               DEM-derived catchment runoff
 flood_fill.py           Flood extent and road-depth estimation
 terrain.py              DEM and catchment processing
 routing.py              Flood-aware road routing
 generate_network.py     Regenerate the SWMM network and topology
+recalibrate_pipes.py    Second pass to size pipes from DEM flow
 pune_base.inp           SWMM input network
 data/                   Generated catchment data
+gnn/                    AI surrogate model training and inference
 frontend/               React + Vite map application
 ```
 
@@ -99,12 +105,14 @@ The API also exposes interactive documentation at `http://127.0.0.1:8000/docs`.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/network` | Return the baseline drainage network as GeoJSON. |
-| `POST` | `/simulate` | Run a storm simulation. Body: `{"rainfall_mm_per_hr": 50}`. |
+| `GET` | `/network` | Return the baseline drainage GeoJSON. |
+| `POST` | `/simulate` | Run storm simulation via PySWMM (legacy, slow). Body: `{"rainfall_mm_per_hr": 50}`. |
+| `POST` | `/simulate_gnn` | Run storm simulation via AI surrogate (fast). Body: `{"rainfall_mm_per_hr": 50}`. |
+| `POST` | `/admin/update-dimensions` | Upload CSV of `pipe_id,new_diameter_m` to dynamically adapt the network. |
 | `GET` | `/nowcast` | Return a synthetic rainfall intensity grid. |
 | `POST` | `/route` | Find a route using origin, destination, and current road depths. |
 
-`/simulate` captures frames at 15-minute intervals. If PySWMM fails, the API returns a fallback frame and sets the `X-Engine-Status: fallback` response header.
+Both simulate endpoints return identical `{"frames": [...]}` payloads. The API headers `X-Engine` and `X-Total-Ms` indicate which engine was used and how long it took.
 
 ## Regenerate model data
 

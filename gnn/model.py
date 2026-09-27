@@ -84,25 +84,32 @@ class MPNNLayer(nn.Module):
 class FloodGNN(nn.Module):
     """Spatio-temporal GNN for per-node surcharge volume prediction.
 
+    Targets are log-transformed (log1p) during training to handle the
+    highly skewed surcharge distribution (0–22,800 m³).  Predictions
+    are converted back via expm1 at inference time.
+
     Args:
         n_node_feat:  Number of input node features (default 4).
         n_edge_feat:  Number of edge features (default 4).
         hidden_dim:   Hidden dimension for message passing and GRU (default 64).
         n_mp_layers:  Number of message-passing rounds per timestep (default 3).
         dropout:      Dropout rate for the readout MLP (default 0.1).
+        log_targets:  If True, train on log1p(y) and invert at inference.
     """
 
     def __init__(
         self,
-        n_node_feat: int = 4,
+        n_node_feat: int = 6,
         n_edge_feat: int = 4,
         hidden_dim: int = 64,
         n_mp_layers: int = 3,
         dropout: float = 0.1,
+        log_targets: bool = False,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.n_mp_layers = n_mp_layers
+        self.log_targets = log_targets
 
         # Input projection: node features → hidden_dim
         self.input_proj = nn.Linear(n_node_feat, hidden_dim)
@@ -116,15 +123,19 @@ class FloodGNN(nn.Module):
         self.gru = nn.GRUCell(hidden_dim, hidden_dim)
 
         # Readout: hidden → surcharge volume (scalar per node)
-        self.readout = nn.Sequential(
+        # Output is unbounded when log_targets=True (log-space),
+        # Softplus when predicting raw volumes.
+        readout_layers = [
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, 1),
-            nn.Softplus(),  # surcharge volume is non-negative
-        )
+        ]
+        if not log_targets:
+            readout_layers.append(nn.Softplus())
+        self.readout = nn.Sequential(*readout_layers)
 
-        # Loss function
+        # MSE in log-space: strong gradients on the large errors that matter most
         self.loss_fn = nn.MSELoss()
 
     def _encode_timestep(
@@ -175,7 +186,10 @@ class FloodGNN(nn.Module):
             # Predict surcharge volume per node
             pred = self.readout(h).squeeze(-1)  # (N,)
             predictions.append(pred)
-            targets.append(data.y)
+
+            # Log-transform targets to match prediction space
+            y = torch.log1p(data.y) if self.log_targets else data.y
+            targets.append(y)
 
         return torch.stack(predictions), torch.stack(targets)  # (T, N), (T, N)
 
@@ -186,9 +200,12 @@ class FloodGNN(nn.Module):
 
     @torch.no_grad()
     def predict(self, sequence: list) -> torch.Tensor:
-        """Inference: return (T, N) surcharge volume predictions."""
+        """Inference: return (T, N) surcharge volume predictions in real units (m³)."""
         self.eval()
         preds, _ = self.forward(sequence)
+        # Convert from log-space back to real volumes
+        if self.log_targets:
+            preds = torch.expm1(preds).clamp(min=0)
         return preds
 
 

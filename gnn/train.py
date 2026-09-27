@@ -88,7 +88,7 @@ def train(
     patience: int = 20,
     lr: float = 1e-3,
     weight_decay: float = 1e-5,
-    hidden_dim: int = 64,
+    hidden_dim: int = 128,
     n_mp_layers: int = 3,
     dropout: float = 0.1,
     device: str | None = None,
@@ -195,19 +195,24 @@ def train(
     def evaluate(indices: list[int]) -> dict[str, float]:
         model.eval()
         total_loss = 0.0
-        all_preds = []
-        all_targets = []
+        all_preds_real = []
+        all_targets_real = []
         for idx in indices:
             seq = to_device(dataset[idx])
             preds, targets = model(seq)
-            total_loss += nn.functional.mse_loss(preds, targets).item()
-            all_preds.append(preds.cpu())
-            all_targets.append(targets.cpu())
+            total_loss += model.loss_fn(preds, targets).item()
+            # Convert to real-space for metrics
+            if model.log_targets:
+                all_preds_real.append(torch.expm1(preds).clamp(min=0).cpu())
+                all_targets_real.append(torch.expm1(targets).clamp(min=0).cpu())
+            else:
+                all_preds_real.append(preds.cpu())
+                all_targets_real.append(targets.cpu())
         avg_loss = total_loss / max(len(indices), 1)
-        # Aggregate metrics across all scenarios
-        all_preds = torch.cat(all_preds, dim=0)
-        all_targets = torch.cat(all_targets, dim=0)
-        metrics = compute_metrics(all_preds, all_targets)
+        # Aggregate metrics across all scenarios (in real-space m³)
+        all_preds_real = torch.cat(all_preds_real, dim=0)
+        all_targets_real = torch.cat(all_targets_real, dim=0)
+        metrics = compute_metrics(all_preds_real, all_targets_real)
         metrics["loss"] = avg_loss
         return metrics
 
@@ -286,6 +291,7 @@ def train(
                 "n_node_feat": dataset.n_node_features,
                 "n_edge_feat": dataset.n_edge_features,
                 "dropout": dropout,
+                "log_targets": model.log_targets,
             }, best_ckpt_path)
             logger.info("  ✓ Saved best checkpoint (val_loss=%.6f)", best_val_loss)
         else:

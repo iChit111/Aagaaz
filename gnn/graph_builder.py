@@ -153,11 +153,13 @@ class DrainageGraphBuilder:
             y:              (N,) target surcharge volume per node
             elapsed_min:    scalar — timestep in the simulation
 
-        Node features (F_node = 4):
+        Node features (F_node = 6):
             0: elevation (m), normalised
             1: catchment area (m^2), log-scaled
             2: rainfall intensity (mm/hr) at this timestep
             3: cumulative rainfall (mm) up to this timestep
+            4: min pipe diameter (m) of connected pipes
+            5: total pipe capacity (Manning's proxy), log-scaled
 
         Edge features (F_edge = 4):
             0: pipe diameter (m)
@@ -179,6 +181,7 @@ class DrainageGraphBuilder:
             storm_offset = tuple(data["storm_offset"].tolist())
 
         N = len(node_ids)
+        E = edge_index.shape[1]
         center = self._get_junction_center(junction_coords)
 
         # Static node features
@@ -191,6 +194,22 @@ class DrainageGraphBuilder:
             dtype=np.float32,
         )
         catchment_log = np.log1p(catchment_areas)
+
+        # Derived node features: per-node pipe capacity indicators
+        # These tell the model the flooding threshold at each junction
+        # without needing to discover it through message passing.
+        min_pipe_diam = np.full(N, 1.0, dtype=np.float32)  # default 1m if no pipes
+        total_pipe_capacity = np.zeros(N, dtype=np.float32)
+        for e in range(E):
+            src, dst = int(edge_index[0, e]), int(edge_index[1, e])
+            d = float(pipe_diameters[e])
+            # Manning's pipe capacity proxy: D^(8/3) / n * sqrt(S)
+            n = float(pipe_mannings[e])
+            s = max(float(pipe_slopes[e]), 1e-4)
+            capacity = (d ** (8.0 / 3.0)) / n * (s ** 0.5)
+            for node_idx in (src, dst):
+                min_pipe_diam[node_idx] = min(min_pipe_diam[node_idx], d)
+                total_pipe_capacity[node_idx] += capacity
 
         # Static edge features
         edge_attr = torch.tensor(
@@ -226,13 +245,15 @@ class DrainageGraphBuilder:
                 dt_hr = (t_min - elapsed_minutes[t_idx - 1]) / 60.0
                 cumulative_rainfall += rainfall * dt_hr  # mm
 
-            # Node feature matrix: (N, 4)
+            # Node feature matrix: (N, 6)
             x = torch.tensor(
                 np.column_stack([
                     elev_norm,
                     catchment_log,
                     rainfall,
                     cumulative_rainfall,
+                    min_pipe_diam,
+                    np.log1p(total_pipe_capacity),
                 ]),
                 dtype=torch.float32,
             )
@@ -317,7 +338,7 @@ class TrainingDataset(Dataset):
     @property
     def n_node_features(self) -> int:
         """Number of node features (F_node) in each Data.x."""
-        return 4  # elevation, catchment_area, rainfall, cumulative_rainfall
+        return 6  # elevation, catchment_area, rainfall, cumulative_rainfall, min_pipe_diam, pipe_capacity
 
     @property
     def n_edge_features(self) -> int:

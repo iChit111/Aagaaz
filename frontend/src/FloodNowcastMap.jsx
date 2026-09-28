@@ -1,8 +1,10 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Map, { Layer, Source, Marker, Popup } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import './FloodNowcastMap.css';
 import puneRoadsData from './pune_roads.json';
+import RouteStopsInput from './RouteStopsInput';
+import { describePoint } from './places';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 // Layer 1 (PySWMM physics) is the authoritative output shown to users; the
@@ -14,6 +16,10 @@ const HEALTH_CHECK_INTERVAL_MS = 30000;
 const HEALTH_CHECK_TIMEOUT_MS = 5000;
 // Wait for the scrubber to settle before re-planning the route
 const ROUTE_DEBOUNCE_MS = 250;
+const EMPTY_STOPS = { origin: null, destination: null };
+const STOP_COLORS = { origin: '#22c55e', destination: '#ef4444' };
+// Zoom used when jumping to a single searched place
+const SEARCH_RESULT_ZOOM = 15.5;
 
 const TOTAL_ROADS = puneRoadsData.features.length;
 // Stable fallback so memos/effects keyed on depths don't re-run every render
@@ -175,7 +181,11 @@ export default function FloodNowcastMap() {
   const [apiStatus, setApiStatus] = useState('checking');
 
   const [routeMode, setRouteMode] = useState(false);
-  const [routePoints, setRoutePoints] = useState([]); // [[lon, lat], ...], up to 2
+  // { origin, destination }, each { coordinates: [lon, lat], label } or null
+  const [routeStops, setRouteStops] = useState(EMPTY_STOPS);
+  // The stop the next map click fills: the field last focused, else the first empty one
+  const [activeStop, setActiveStop] = useState(null);
+  const mapRef = useRef(null);
   const [route, setRoute] = useState(null);
   const [routeError, setRouteError] = useState('');
   const [isRouting, setIsRouting] = useState(false);
@@ -291,8 +301,9 @@ export default function FloodNowcastMap() {
   // Re-plan whenever the endpoints move or the flood picture changes (new run,
   // scrubbing, playback), so the route always matches the frame on screen.
   useEffect(() => {
-    if (routePoints.length < 2) return undefined;
-    const [origin, destination] = routePoints;
+    if (!routeStops.origin || !routeStops.destination) return undefined;
+    const origin = routeStops.origin.coordinates;
+    const destination = routeStops.destination.coordinates;
     let cancelled = false;
 
     const timer = setTimeout(async () => {
@@ -323,7 +334,7 @@ export default function FloodNowcastMap() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [routePoints, currentDepths, currentElapsedMin]);
+  }, [routeStops, currentDepths, currentElapsedMin]);
 
   async function simulateRainfall() {
     setIsSimulating(true);
@@ -358,7 +369,8 @@ export default function FloodNowcastMap() {
   }
 
   function clearRoute() {
-    setRoutePoints([]);
+    setRouteStops(EMPTY_STOPS);
+    setActiveStop(null);
     setRoute(null);
     setRouteError('');
     setIsRouting(false);
@@ -369,14 +381,53 @@ export default function FloodNowcastMap() {
     clearRoute();
   }
 
-  function swapRoutePoints() {
-    setRoutePoints(([origin, destination]) => [destination, origin]);
+  // Bring a searched place into view; with both stops set, frame the whole trip
+  function showStops(stops) {
+    const map = mapRef.current;
+    if (!map) return;
+    // Keep the stops clear of the control panel (left on desktop, bottom on phones)
+    const padding = window.innerWidth > 600
+      ? { top: 80, bottom: 80, left: 400, right: 80 }
+      : { top: 60, bottom: Math.round(window.innerHeight * 0.55), left: 40, right: 40 };
+    const points = [stops.origin, stops.destination].filter(Boolean).map((stop) => stop.coordinates);
+    if (points.length === 2) {
+      const lngs = points.map(([lng]) => lng);
+      const lats = points.map(([, lat]) => lat);
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding, maxZoom: 16, duration: 800 }
+      );
+    } else if (points.length === 1) {
+      map.flyTo({ center: points[0], zoom: Math.max(map.getZoom(), SEARCH_RESULT_ZOOM), padding, duration: 800 });
+    }
   }
 
-  function moveRoutePoint(pointIndex, lngLat) {
-    setRoutePoints((points) =>
-      points.map((point, index) => (index === pointIndex ? [lngLat.lng, lngLat.lat] : point))
-    );
+  function setStop(field, stop, { fromSearch = false } = {}) {
+    const nextStops = { ...routeStops, [field]: stop };
+    setRouteStops(nextStops);
+    const otherField = field === 'origin' ? 'destination' : 'origin';
+    setActiveStop(nextStops[otherField] ? null : otherField);
+    if (fromSearch) showStops(nextStops);
+  }
+
+  function clearStop(field) {
+    setRouteStops((stops) => ({ ...stops, [field]: null }));
+    setActiveStop(field);
+    setRoute(null);
+    setRouteError('');
+  }
+
+  function swapRouteStops() {
+    setRouteStops(({ origin, destination }) => ({ origin: destination, destination: origin }));
+  }
+
+  function stopAt(lngLat) {
+    const coordinates = [lngLat.lng, lngLat.lat];
+    return { coordinates, label: describePoint(coordinates) };
+  }
+
+  function moveRouteStop(field, lngLat) {
+    setRouteStops((stops) => ({ ...stops, [field]: stopAt(lngLat) }));
   }
 
   function roadFromEvent(event) {
@@ -397,9 +448,10 @@ export default function FloodNowcastMap() {
       setHoveredRoad(roadFromEvent(event));
       return;
     }
-    // Once both pins are down they're adjusted by dragging, not by clicking
-    if (routePoints.length >= 2) return;
-    setRoutePoints([...routePoints, [event.lngLat.lng, event.lngLat.lat]]);
+    const field = activeStop ?? (!routeStops.origin ? 'origin' : !routeStops.destination ? 'destination' : null);
+    // Once both stops are set they're adjusted by dragging the pins, not by clicking
+    if (!field) return;
+    setStop(field, stopAt(event.lngLat));
   }
 
   if (!MAPBOX_TOKEN) {
@@ -421,12 +473,13 @@ export default function FloodNowcastMap() {
   const hoveredStatus = getFloodStatus(hoveredDepth);
 
   let mapCursor = 'grab';
-  if (routeMode && routePoints.length < 2) mapCursor = 'crosshair';
+  if (routeMode && (activeStop || !routeStops.origin || !routeStops.destination)) mapCursor = 'crosshair';
   else if (hoveredRoad) mapCursor = 'pointer';
 
   return (
     <main className="flood-map" aria-busy={isSimulating}>
       <Map
+        ref={mapRef}
         mapboxAccessToken={MAPBOX_TOKEN}
         initialViewState={{
           longitude: 73.84, // Deccan Gymkhana
@@ -459,24 +512,16 @@ export default function FloodNowcastMap() {
           </Source>
         )}
 
-        {routePoints[0] && (
+        {['origin', 'destination'].map((field) => routeStops[field] && (
           <Marker
-            longitude={routePoints[0][0]}
-            latitude={routePoints[0][1]}
-            color="#22c55e"
+            key={field}
+            longitude={routeStops[field].coordinates[0]}
+            latitude={routeStops[field].coordinates[1]}
+            color={STOP_COLORS[field]}
             draggable
-            onDragEnd={(event) => moveRoutePoint(0, event.lngLat)}
+            onDragEnd={(event) => moveRouteStop(field, event.lngLat)}
           />
-        )}
-        {routePoints[1] && (
-          <Marker
-            longitude={routePoints[1][0]}
-            latitude={routePoints[1][1]}
-            color="#ef4444"
-            draggable
-            onDragEnd={(event) => moveRoutePoint(1, event.lngLat)}
-          />
-        )}
+        ))}
 
         {hoveredRoad && (
           <Popup
@@ -659,22 +704,23 @@ export default function FloodNowcastMap() {
           </button>
 
           {routeMode && (
-            <p className="route-hint">
-              {routePoints.length === 0 && 'Click the map to set a start point.'}
-              {routePoints.length === 1 && 'Now click a destination.'}
-              {routePoints.length === 2 && 'Drag the pins to adjust the route.'}
-            </p>
-          )}
-
-          {routePoints.length === 2 && (
-            <div className="route-actions">
-              <button type="button" onClick={swapRoutePoints} className="button button--secondary">
-                Swap start / end
-              </button>
-              <button type="button" onClick={clearRoute} className="button button--secondary">
-                Clear
-              </button>
-            </div>
+            <>
+              <RouteStopsInput
+                stops={routeStops}
+                onFocusStop={setActiveStop}
+                onSelectStop={setStop}
+                onClearStop={clearStop}
+                onSwap={swapRouteStops}
+              />
+              {routeStops.origin && routeStops.destination && (
+                <div className="route-actions">
+                  <p className="route-hint">Drag the pins to fine-tune the route.</p>
+                  <button type="button" onClick={clearRoute} className="button button--secondary button--inline">
+                    Clear
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           {isRouting && <p className="route-hint" role="status">Finding a flood-safe path…</p>}

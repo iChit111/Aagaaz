@@ -484,8 +484,207 @@
 
 .route-actions {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin-top: 10px;
+}
+
+.route-actions .route-hint {
+  margin-top: 0;
+}
+
+.button--inline {
+  width: auto;
+  flex-shrink: 0;
+}
+
+/* Start / destination inputs, laid out like a maps app */
+
+.route-stops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.route-stops__fields {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stop-field {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+}
+
+.stop-field__icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+}
+
+.stop-field__icon svg {
+  width: 16px;
+  height: 16px;
+  fill: var(--impassable);
+}
+
+.stop-field__origin-dot {
+  width: 12px;
+  height: 12px;
+  border: 2.5px solid var(--clear);
+  border-radius: 50%;
+}
+
+/* Dotted line joining the start circle to the destination pin */
+.stop-field--origin .stop-field__icon::after {
+  content: '';
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  height: 18px;
+  border-left: 2px dotted var(--text-faint);
+  transform: translateX(-1px);
+}
+
+.stop-field__control {
+  position: relative;
+}
+
+.stop-field__input {
+  width: 100%;
+  padding: 9px 30px 9px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.stop-field__input::placeholder {
+  color: var(--text-faint);
+}
+
+.stop-field__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+}
+
+.stop-field__clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.stop-field__clear:hover {
+  background: rgba(156, 163, 175, 0.15);
+  color: var(--text);
+}
+
+.stop-field__clear:focus-visible,
+.route-stops__swap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.route-stops__swap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.route-stops__swap svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.route-stops__swap:hover:not(:disabled) {
+  background: rgba(156, 163, 175, 0.15);
+  color: var(--text);
+}
+
+.route-stops__swap:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+/* Suggestions sit in the flow under their input: the panel scrolls, so a
+   floating dropdown would be clipped at its edge */
+.stop-suggestions {
+  grid-column: 2;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: #0b1220;
+}
+
+.stop-suggestions__item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.stop-suggestions__item[aria-selected='true'] {
+  background: rgba(96, 165, 250, 0.16);
+}
+
+/* One line each for name and address; Mapbox addresses can run to 3+ lines */
+.stop-suggestions__label,
+.stop-suggestions__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stop-suggestions__label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.stop-suggestions__detail,
+.stop-suggestions__empty {
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+
+.stop-suggestions__empty {
+  padding: 7px 8px;
 }
 
 .route-summary {

@@ -147,7 +147,7 @@ def _snapshot(elapsed_min: int, nodes: dict) -> FloodFrame:
 
 @app.post("/simulate", response_model=NowcastResponse)
 def simulate(request: SimulationRequest, response: Response) -> NowcastResponse:
-    """Run PySWMM and return a 0-3hr nowcast time series of street-level flood depths.
+    """Layer 1 (authoritative): run PySWMM and return a 0-3hr nowcast time series of street-level flood depths.
 
     Rainfall is driven by nowcast.py's synthetic storm cell, scaled so its
     peak matches the requested rainfall_mm_per_hr. Each junction gets its
@@ -187,20 +187,17 @@ def simulate(request: SimulationRequest, response: Response) -> NowcastResponse:
             if final_elapsed != frames[-1]["elapsed_min"]:
                 frames.append(_snapshot(final_elapsed, nodes))
 
+        response.headers["X-Engine"] = "physics"
         return {"frames": frames}
 
-    except Exception:
-        logger.exception("PySWMM engine failed; falling back to mock flood data")
-        response.headers["X-Engine-Status"] = "fallback"
-        # Bulletproof fallback: flag every junction as surcharging once rainfall
-        # crosses a rough heavy-rain threshold, so a crashed engine still shows
-        # *something* plausible instead of an empty map.
-        surcharge_volume_m3 = 5000.0 if request.rainfall_mm_per_hr > 50 else 0.0
-        surcharging_nodes = [
-            {"node_id": node_id, "surcharge_volume_m3": surcharge_volume_m3}
-            for node_id in JUNCTION_COORDINATES
-        ]
-        return {"frames": [{"elapsed_min": 0, "depths": calculate_area_depths(surcharging_nodes)}]}
+    except Exception as exc:
+        # This is the authoritative output shown to decision-makers, so a
+        # crashed engine must surface as an error, never as stand-in depths.
+        logger.exception("PySWMM engine failed")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Physics engine (PySWMM) failed: {exc}. No flood depths are available for this run.",
+        ) from exc
 
 
 class RouteRequest(BaseModel):

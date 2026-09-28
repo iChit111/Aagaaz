@@ -24,7 +24,7 @@ Runtime (what happens on each `/simulate` call):
 1. **`nowcast.py`** — No live radar feed is available, so this generates a synthetic rainstorm: a drifting, bell-shaped intensity blob queryable at any point and time over the 0-3hr window.
 2. **`runoff.py`** — Averages that synthetic rainfall over each junction's catchment (from `terrain.py`) and converts it into a volumetric inflow rate (m³/s) using a runoff coefficient (0.9, concrete-heavy urban assumption).
 3. **Simulation (PySWMM or AI)** — `main.py` provides two endpoints for routing the water:
-   - `/simulate`: The legacy engine. Feeds inflow into PySWMM every timestep to solve the Saint-Venant equations. Extremely accurate, but slow (~2 seconds per request).
+   - `/simulate`: The physics engine (Layer 1, authoritative). Feeds inflow into PySWMM every timestep to solve the Saint-Venant equations. This is what the frontend displays. It takes about 0.3 seconds per request for the current 25-junction network. If PySWMM fails, it returns HTTP 503 rather than substitute data.
    - `/simulate_gnn`: The AI engine. Uses a trained Spatio-Temporal Graph Neural Network (GNN) to predict the identical overflow patterns in < 150ms. Highly scalable for simultaneous users.
 4. **`flood_fill.py`** — Turns each junction's overflow volume into a street-level puddle: starting from the junction's location on the DEM, it fills in the lowest neighboring terrain cells first (a "bathtub fill" / priority-flood), stopping once the pooled volume matches the overflow. It then checks which road vertices (from `frontend/src/pune_roads.json`) fall inside the puddle to report per-road depth in cm.
 5. **`routing.py`** — Builds a graph from the same road GeoJSON and finds a route with **Dijkstra's shortest-path algorithm** (via NetworkX), with edge weights adjusted by current flood depth: roads ≥30cm are excluded entirely wherever a dry detour exists, roads ≥10cm are heavily penalized (×6) but passable, and if no dry route exists at all it falls back to allowing flooded roads (penalized ×50) and flags the result `degraded: true`.
@@ -106,13 +106,13 @@ The API also exposes interactive documentation at `http://127.0.0.1:8000/docs`.
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `GET` | `/network` | Return the baseline drainage GeoJSON. |
-| `POST` | `/simulate` | Run storm simulation via PySWMM (legacy, slow). Body: `{"rainfall_mm_per_hr": 50}`. |
+| `POST` | `/simulate` | Run storm simulation via PySWMM (authoritative, used by the frontend). Returns 503 if the engine fails. Body: `{"rainfall_mm_per_hr": 50}`. |
 | `POST` | `/simulate_gnn` | Run storm simulation via AI surrogate (fast). Body: `{"rainfall_mm_per_hr": 50}`. |
 | `POST` | `/admin/update-dimensions` | Upload CSV of `pipe_id,new_diameter_m` to dynamically adapt the network. |
 | `GET` | `/nowcast` | Return a synthetic rainfall intensity grid. |
 | `POST` | `/route` | Find a route using origin, destination, and current road depths. |
 
-Both simulate endpoints return identical `{"frames": [...]}` payloads. The API headers `X-Engine` and `X-Total-Ms` indicate which engine was used and how long it took.
+Both simulate endpoints return identical `{"frames": [...]}` payloads. The `X-Engine` header (`physics` or `gnn`) indicates which engine produced the result; `/simulate_gnn` also reports timings in `X-GNN-Inference-Ms` and `X-Total-Ms`.
 
 ## Regenerate model data
 

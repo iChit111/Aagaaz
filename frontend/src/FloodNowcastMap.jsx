@@ -1,10 +1,23 @@
 import { useState, useMemo, useEffect } from 'react';
-import Map, { Layer, Source, Marker } from 'react-map-gl/mapbox';
+import Map, { Layer, Source, Marker, Popup } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import './FloodNowcastMap.css';
 import puneRoadsData from './pune_roads.json';
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+// Layer 1 (PySWMM physics) is the authoritative output shown to users; the
+// GNN surrogate at /simulate_gnn is not displayed.
+const SIMULATE_ENDPOINT = '/simulate';
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const MAP_STYLE = 'mapbox://styles/mapbox/dark-v11';
+const HEALTH_CHECK_INTERVAL_MS = 30000;
+const HEALTH_CHECK_TIMEOUT_MS = 5000;
+// Wait for the scrubber to settle before re-planning the route
+const ROUTE_DEBOUNCE_MS = 250;
+
+const TOTAL_ROADS = puneRoadsData.features.length;
+// Stable fallback so memos/effects keyed on depths don't re-run every render
+const EMPTY_DEPTHS = {};
 
 // IMD real-time rainfall intensity brackets (mm/hr)
 const RAINFALL_CATEGORIES = [
@@ -16,6 +29,40 @@ const RAINFALL_CATEGORIES = [
   { max: Infinity, label: 'Extreme Rain', color: '#b91c1c' },
 ];
 
+const RAINFALL_MAX = 150;
+
+// One-tap starting points, one per IMD category from moderate upwards
+const RAINFALL_PRESETS = [
+  { label: 'Moderate', value: 25 },
+  { label: 'Heavy', value: 50 },
+  { label: 'Very heavy', value: 100 },
+  { label: 'Extreme', value: 150 },
+];
+
+// Hard-edged colour bands so the slider track shows where each category begins
+const RAINFALL_TRACK_GRADIENT = (() => {
+  let start = 0;
+  const stops = RAINFALL_CATEGORIES.map((category) => {
+    const end = (Math.min(category.max, RAINFALL_MAX) / RAINFALL_MAX) * 100;
+    const stop = `${category.color} ${start}% ${end}%`;
+    start = end;
+    return stop;
+  });
+  return `linear-gradient(to right, ${stops.join(', ')})`;
+})();
+
+const API_STATUS_LABELS = {
+  checking: 'Checking server…',
+  online: 'Server online',
+  offline: 'Server offline',
+};
+
+const FLOOD_STATUS_LABELS = {
+  dry: 'Clear',
+  pooling: 'Pooling',
+  impassable: 'Impassable',
+};
+
 function getRainfallCategory(mmPerHr) {
   return RAINFALL_CATEGORIES.find((bucket) => mmPerHr <= bucket.max);
 }
@@ -24,6 +71,35 @@ function getFloodStatus(depthCm) {
   if (depthCm >= 30) return 'impassable';
   if (depthCm >= 10) return 'pooling';
   return 'dry';
+}
+
+function getRoadId(feature) {
+  // Overpass Turbo usually assigns OSM IDs as strings like "way/12345"
+  const roadId = feature.id ?? feature.properties?.id ?? feature.properties?.['@id'];
+  return roadId == null ? null : String(roadId);
+}
+
+// fetch() rejects with a TypeError when the server can't be reached at all,
+// which the browser reports as an unhelpful "Failed to fetch".
+function describeRequestError(error) {
+  if (error instanceof TypeError) {
+    return `Can't reach the simulation server at ${API_BASE_URL}. Check that the backend is running.`;
+  }
+  return error.message;
+}
+
+async function readErrorDetail(response, fallback) {
+  try {
+    const body = await response.json();
+    if (typeof body.detail === 'string') return body.detail;
+  } catch {
+    // Non-JSON error body; fall through to the generic message
+  }
+  return `${fallback} (${response.status})`;
+}
+
+function formatDepth(depthCm) {
+  return `${Math.round(depthCm)} cm`;
 }
 
 // A dark halo under a bright line reads clearly regardless of the road
@@ -48,6 +124,16 @@ const routeLayer = {
   },
 };
 
+// Flooded roads the route still has to use, drawn under the dashed route line
+const routeFloodedLayer = {
+  id: 'flood-safe-route-flooded',
+  type: 'line',
+  paint: {
+    'line-width': 9,
+    'line-color': ['case', ['>=', ['get', 'flood_depth'], 30], '#ef4444', '#f97316'],
+  },
+};
+
 // The Data-Driven Paint Rules for Roads
 const roadLayer = {
   id: 'road-floods',
@@ -67,6 +153,16 @@ const roadLayer = {
   },
 };
 
+// Invisible, wider copy of the roads so the 4px lines are easy to hover/tap
+const roadHitLayer = {
+  id: 'road-hit-area',
+  type: 'line',
+  paint: {
+    'line-width': 16,
+    'line-opacity': 0,
+  },
+};
+
 export default function FloodNowcastMap() {
   // Nowcast time series: [{ elapsed_min, depths: { roadId: cm } }, ...]
   const [frames, setFrames] = useState([]);
@@ -76,6 +172,7 @@ export default function FloodNowcastMap() {
   const [error, setError] = useState('');
   const [isSimulating, setIsSimulating] = useState(false);
   const [lastRun, setLastRun] = useState(null);
+  const [apiStatus, setApiStatus] = useState('checking');
 
   const [routeMode, setRouteMode] = useState(false);
   const [routePoints, setRoutePoints] = useState([]); // [[lon, lat], ...], up to 2
@@ -83,30 +180,52 @@ export default function FloodNowcastMap() {
   const [routeError, setRouteError] = useState('');
   const [isRouting, setIsRouting] = useState(false);
 
+  // { roadId, name, nameMr, longitude, latitude } for the road under the pointer
+  const [hoveredRoad, setHoveredRoad] = useState(null);
+
   const rainfallCategory = getRainfallCategory(rainfallIntensity);
   const currentFrame = frames[frameIndex];
-  const currentDepths = currentFrame?.depths ?? {};
+  const currentDepths = currentFrame?.depths ?? EMPTY_DEPTHS;
+  const currentElapsedMin = currentFrame?.elapsed_min ?? 0;
 
   const runSummary = useMemo(() => {
     const depths = Object.values(currentDepths);
-    return {
-      impassable: depths.filter((d) => getFloodStatus(d) === 'impassable').length,
-      pooling: depths.filter((d) => getFloodStatus(d) === 'pooling').length,
-      dry: depths.filter((d) => getFloodStatus(d) === 'dry').length,
-    };
+    const impassable = depths.filter((d) => getFloodStatus(d) === 'impassable').length;
+    const pooling = depths.filter((d) => getFloodStatus(d) === 'pooling').length;
+    // The API only reports depths for roads inside a flood extent, so every
+    // other road in the study area is clear.
+    return { impassable, pooling, dry: TOTAL_ROADS - impassable - pooling };
   }, [currentDepths]);
+
+  // Per-road peak depth and when it first floods, across the whole 0-3hr window
+  const roadTimeline = useMemo(() => {
+    const byRoad = {};
+    for (const frame of frames) {
+      for (const [roadId, depth] of Object.entries(frame.depths)) {
+        const entry = (byRoad[roadId] ??= { peakDepth: 0, peakMin: null, firstFloodMin: null });
+        if (depth > entry.peakDepth) {
+          entry.peakDepth = depth;
+          entry.peakMin = frame.elapsed_min;
+        }
+        if (entry.firstFloodMin === null && depth >= 10) {
+          entry.firstFloodMin = frame.elapsed_min;
+        }
+      }
+    }
+    return byRoad;
+  }, [frames]);
 
   // The Injection: Merge static roads with the currently scrubbed frame's depths
   const dynamicMapData = useMemo(() => {
     const updatedFeatures = puneRoadsData.features.map(feature => {
-      // Overpass Turbo usually assigns OSM IDs as strings like "way/12345"
-      const roadId = feature.id ?? feature.properties?.id;
-      const currentDepth = roadId == null ? 0 : currentDepths[String(roadId)] ?? 0;
+      const roadId = getRoadId(feature);
+      const currentDepth = roadId == null ? 0 : currentDepths[roadId] ?? 0;
 
       return {
         ...feature,
         properties: {
           ...feature.properties,
+          road_id: roadId,
           flood_depth: currentDepth
         }
       };
@@ -124,6 +243,36 @@ export default function FloodNowcastMap() {
     };
   }, [route]);
 
+  const routeFloodedGeoJson = useMemo(() => {
+    if (!route || route.flooded_road_ids.length === 0) return null;
+    const floodedIds = new Set(route.flooded_road_ids);
+    return {
+      type: 'FeatureCollection',
+      features: dynamicMapData.features.filter((feature) => floodedIds.has(feature.properties.road_id)),
+    };
+  }, [route, dynamicMapData]);
+
+  // Poll the backend so the header shows whether simulations can actually run
+  useEffect(() => {
+    let cancelled = false;
+    async function checkApi() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/network`, {
+          signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+        });
+        if (!cancelled) setApiStatus(response.ok ? 'online' : 'offline');
+      } catch {
+        if (!cancelled) setApiStatus('offline');
+      }
+    }
+    checkApi();
+    const timer = setInterval(checkApi, HEALTH_CHECK_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
   // Auto-advance the scrubber through the nowcast window while playing
   useEffect(() => {
     if (!isPlaying || frames.length === 0) return undefined;
@@ -139,95 +288,162 @@ export default function FloodNowcastMap() {
     return () => clearInterval(timer);
   }, [isPlaying, frames.length]);
 
+  // Re-plan whenever the endpoints move or the flood picture changes (new run,
+  // scrubbing, playback), so the route always matches the frame on screen.
+  useEffect(() => {
+    if (routePoints.length < 2) return undefined;
+    const [origin, destination] = routePoints;
+    let cancelled = false;
+
+    const timer = setTimeout(async () => {
+      setIsRouting(true);
+      setRouteError('');
+      try {
+        const response = await fetch(`${API_BASE_URL}/route`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ origin, destination, depths: currentDepths }),
+        });
+        if (!response.ok) {
+          throw new Error(await readErrorDetail(response, 'Routing failed'));
+        }
+        const body = await response.json();
+        if (!cancelled) setRoute({ ...body, elapsed_min: currentElapsedMin });
+      } catch (requestError) {
+        if (!cancelled) {
+          setRoute(null);
+          setRouteError(describeRequestError(requestError));
+        }
+      } finally {
+        if (!cancelled) setIsRouting(false);
+      }
+    }, ROUTE_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [routePoints, currentDepths, currentElapsedMin]);
+
   async function simulateRainfall() {
     setIsSimulating(true);
     setIsPlaying(false);
     setError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/simulate_gnn`, {
+      const response = await fetch(`${API_BASE_URL}${SIMULATE_ENDPOINT}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rainfall_mm_per_hr: rainfallIntensity }),
       });
       if (!response.ok) {
-        throw new Error(`Simulation request failed (${response.status})`);
+        throw new Error(await readErrorDetail(response, 'Simulation request failed'));
       }
       const { frames: newFrames } = await response.json();
+      setApiStatus('online');
       setFrames(newFrames);
       setFrameIndex(0);
       setIsPlaying(true);
       setLastRun(new Date());
     } catch (requestError) {
-      setError(requestError.message);
+      if (requestError instanceof TypeError) setApiStatus('offline');
+      // Drop the previous run so its depths aren't mistaken for this one's
+      setFrames([]);
+      setFrameIndex(0);
+      setLastRun(null);
+      setError(describeRequestError(requestError));
     } finally {
       setIsSimulating(false);
     }
   }
 
-  async function planRoute(origin, destination) {
-    setIsRouting(true);
+  function clearRoute() {
+    setRoutePoints([]);
+    setRoute(null);
     setRouteError('');
-    try {
-      const response = await fetch(`${API_BASE_URL}/route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin, destination, depths: currentDepths }),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.detail || `Routing failed (${response.status})`);
-      }
-      setRoute(body);
-    } catch (requestError) {
-      setRoute(null);
-      setRouteError(requestError.message);
-    } finally {
-      setIsRouting(false);
-    }
+    setIsRouting(false);
   }
 
   function toggleRouteMode() {
     setRouteMode((mode) => !mode);
-    setRoutePoints([]);
-    setRoute(null);
-    setRouteError('');
+    clearRoute();
+  }
+
+  function swapRoutePoints() {
+    setRoutePoints(([origin, destination]) => [destination, origin]);
+  }
+
+  function moveRoutePoint(pointIndex, lngLat) {
+    setRoutePoints((points) =>
+      points.map((point, index) => (index === pointIndex ? [lngLat.lng, lngLat.lat] : point))
+    );
+  }
+
+  function roadFromEvent(event) {
+    const feature = event.features?.[0];
+    if (!feature) return null;
+    return {
+      roadId: feature.properties.road_id,
+      name: feature.properties.name,
+      nameMr: feature.properties['name:mr'],
+      longitude: event.lngLat.lng,
+      latitude: event.lngLat.lat,
+    };
   }
 
   function handleMapClick(event) {
-    if (!routeMode) return;
-    const point = [event.lngLat.lng, event.lngLat.lat];
-
-    if (routePoints.length >= 2) {
-      setRoutePoints([point]);
-      setRoute(null);
-      setRouteError('');
+    if (!routeMode) {
+      // Touch screens have no hover, so a tap shows the road's details instead
+      setHoveredRoad(roadFromEvent(event));
       return;
     }
-
-    const nextPoints = [...routePoints, point];
-    setRoutePoints(nextPoints);
-    if (nextPoints.length === 2) {
-      planRoute(nextPoints[0], nextPoints[1]);
-    }
+    // Once both pins are down they're adjusted by dragging, not by clicking
+    if (routePoints.length >= 2) return;
+    setRoutePoints([...routePoints, [event.lngLat.lng, event.lngLat.lat]]);
   }
 
+  if (!MAPBOX_TOKEN) {
+    return (
+      <main className="flood-map flood-map--notice">
+        <div className="panel notice-card" role="alert">
+          <h1 className="panel__title">Map can't load</h1>
+          <p>
+            <code>VITE_MAPBOX_TOKEN</code> isn't set. Add your Mapbox public token to{' '}
+            <code>frontend/.env.local</code> and restart the dev server.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  const hoveredStats = hoveredRoad ? roadTimeline[hoveredRoad.roadId] : null;
+  const hoveredDepth = hoveredRoad ? currentDepths[hoveredRoad.roadId] ?? 0 : 0;
+  const hoveredStatus = getFloodStatus(hoveredDepth);
+
+  let mapCursor = 'grab';
+  if (routeMode && routePoints.length < 2) mapCursor = 'crosshair';
+  else if (hoveredRoad) mapCursor = 'pointer';
+
   return (
-    <main style={styles.mapShell}>
+    <main className="flood-map" aria-busy={isSimulating}>
       <Map
-        mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+        mapboxAccessToken={MAPBOX_TOKEN}
         initialViewState={{
           longitude: 73.84, // Deccan Gymkhana
           latitude: 18.51,
           zoom: 14
         }}
         mapStyle={MAP_STYLE}
+        interactiveLayerIds={[roadHitLayer.id]}
         onClick={handleMapClick}
-        cursor={routeMode ? 'crosshair' : 'grab'}
+        onMouseMove={(event) => setHoveredRoad(roadFromEvent(event))}
+        onMouseLeave={() => setHoveredRoad(null)}
+        cursor={mapCursor}
       >
         {/* Render the dynamically colored roads */}
         <Source id="pune-roads" type="geojson" data={dynamicMapData}>
           <Layer {...roadLayer} />
+          <Layer {...roadHitLayer} />
         </Source>
 
         {routeGeoJson && (
@@ -237,25 +453,98 @@ export default function FloodNowcastMap() {
           </Source>
         )}
 
+        {routeFloodedGeoJson && (
+          <Source id="flood-safe-route-flooded" type="geojson" data={routeFloodedGeoJson}>
+            <Layer {...routeFloodedLayer} beforeId={routeLayer.id} />
+          </Source>
+        )}
+
         {routePoints[0] && (
-          <Marker longitude={routePoints[0][0]} latitude={routePoints[0][1]} color="#22c55e" />
+          <Marker
+            longitude={routePoints[0][0]}
+            latitude={routePoints[0][1]}
+            color="#22c55e"
+            draggable
+            onDragEnd={(event) => moveRoutePoint(0, event.lngLat)}
+          />
         )}
         {routePoints[1] && (
-          <Marker longitude={routePoints[1][0]} latitude={routePoints[1][1]} color="#ef4444" />
+          <Marker
+            longitude={routePoints[1][0]}
+            latitude={routePoints[1][1]}
+            color="#ef4444"
+            draggable
+            onDragEnd={(event) => moveRoutePoint(1, event.lngLat)}
+          />
+        )}
+
+        {hoveredRoad && (
+          <Popup
+            longitude={hoveredRoad.longitude}
+            latitude={hoveredRoad.latitude}
+            closeButton={false}
+            closeOnClick={false}
+            offset={14}
+            maxWidth="260px"
+            className="road-popup"
+            onClose={() => setHoveredRoad(null)}
+          >
+            <p className="road-popup__name">{hoveredRoad.name || 'Unnamed road'}</p>
+            {hoveredRoad.nameMr && (
+              <p className="road-popup__name-mr" lang="mr">{hoveredRoad.nameMr}</p>
+            )}
+            {frames.length === 0 ? (
+              <p className="road-popup__hint">Run a simulation to see flood depth here.</p>
+            ) : (
+              <>
+                <p className="road-popup__now">
+                  <span className={`status-badge status-badge--${hoveredStatus}`}>
+                    {FLOOD_STATUS_LABELS[hoveredStatus]}
+                  </span>
+                  <strong>{formatDepth(hoveredDepth)}</strong>
+                  <span className="road-popup__time">at T+{currentElapsedMin} min</span>
+                </p>
+                <dl className="road-popup__stats">
+                  <dt>Peak</dt>
+                  <dd>
+                    {hoveredStats?.peakDepth
+                      ? `${formatDepth(hoveredStats.peakDepth)} at T+${hoveredStats.peakMin} min`
+                      : 'Stays dry'}
+                  </dd>
+                  <dt>Floods from</dt>
+                  <dd>
+                    {hoveredStats?.firstFloodMin != null
+                      ? `T+${hoveredStats.firstFloodMin} min`
+                      : 'Stays below 10 cm'}
+                  </dd>
+                </dl>
+              </>
+            )}
+          </Popup>
         )}
       </Map>
 
-      <section style={styles.controlPanel} aria-label="Flood simulation controls">
-        <div style={styles.panelHeader}>
-          <div>
-            <p style={styles.eyebrow}>SIH 26085 &middot; Deccan Gymkhana, Pune</p>
-            <h1 style={styles.title}>Urban Flood Nowcast</h1>
-            <p style={styles.subtitle}>MoES &middot; NCMRWF &middot; Disaster Management</p>
-          </div>
-          <span style={styles.statusDot} aria-label="API connected" />
+      <div className={`map-dim${isSimulating ? ' map-dim--active' : ''}`} aria-hidden="true" />
+
+      <section className="panel control-panel" aria-label="Flood simulation controls">
+        <div className="panel__header">
+          <p className="eyebrow">SIH 26085 &middot; Deccan Gymkhana, Pune</p>
+          <h1 className="panel__title">Urban Flood Nowcast</h1>
+          <p className="panel__subtitle">MoES &middot; NCMRWF &middot; Disaster Management</p>
+          <p className={`api-status api-status--${apiStatus}`} role="status">
+            <span className="api-status__dot" aria-hidden="true" />
+            {API_STATUS_LABELS[apiStatus]}
+          </p>
         </div>
 
-        <label htmlFor="rainfall-intensity" style={styles.label}>
+        {apiStatus === 'offline' && (
+          <p className="notice notice--warning">
+            Can't reach the simulation server at <code>{API_BASE_URL}</code>. Start the backend,
+            then run a simulation.
+          </p>
+        )}
+
+        <label htmlFor="rainfall-intensity" className="field-label">
           <span>Rainfall intensity</span>
           <strong>{rainfallIntensity} mm/hr</strong>
         </label>
@@ -263,48 +552,78 @@ export default function FloodNowcastMap() {
           id="rainfall-intensity"
           type="range"
           min="0"
-          max="150"
+          max={RAINFALL_MAX}
           step="1"
           value={rainfallIntensity}
           onChange={(event) => setRainfallIntensity(Number(event.target.value))}
-          style={styles.slider}
+          disabled={isSimulating}
+          aria-valuetext={`${rainfallIntensity} mm/hr, ${rainfallCategory.label}`}
+          className="slider slider--rainfall"
+          style={{
+            '--track-gradient': RAINFALL_TRACK_GRADIENT,
+            '--thumb-color': rainfallCategory.color,
+          }}
         />
-        <div style={styles.rangeLabels} aria-hidden="true">
+        <div className="range-labels" aria-hidden="true">
           <span>0</span>
-          <span>150</span>
+          <span>{RAINFALL_MAX}</span>
         </div>
-        <p style={{ ...styles.categoryTag, color: rainfallCategory.color }}>
+        <p className="category-tag" style={{ color: rainfallCategory.color }}>
           {rainfallCategory.label}
         </p>
+
+        <div className="rain-presets" role="group" aria-label="Rainfall presets">
+          {RAINFALL_PRESETS.map((preset) => (
+            <button
+              key={preset.value}
+              type="button"
+              onClick={() => setRainfallIntensity(preset.value)}
+              disabled={isSimulating}
+              aria-pressed={rainfallIntensity === preset.value}
+              className="rain-preset"
+              style={{ '--preset-color': getRainfallCategory(preset.value).color }}
+            >
+              <span className="rain-preset__label">{preset.label}</span>
+              <span className="rain-preset__value">{preset.value} mm/hr</span>
+            </button>
+          ))}
+        </div>
 
         <button
           type="button"
           onClick={simulateRainfall}
           disabled={isSimulating}
-          style={styles.button}
+          className="button button--primary"
         >
-          {isSimulating ? 'Running...' : 'Run Simulation'}
+          {isSimulating ? (
+            <>
+              <span className="spinner" aria-hidden="true" />
+              Running simulation…
+            </>
+          ) : (
+            'Run Simulation'
+          )}
         </button>
-        {error && <p role="alert" style={styles.error}>{error}</p>}
+        {error && <p role="alert" className="notice notice--error">{error}</p>}
 
         {frames.length > 0 && !error && (
-          <div style={styles.summary}>
-            <p style={styles.summaryTimestamp}>
-              Nowcast run: {lastRun?.toLocaleTimeString()}
+          <div className="panel__section">
+            <p className="summary-timestamp">
+              Physics engine (PySWMM) &middot; run at {lastRun?.toLocaleTimeString()}
             </p>
 
-            <div style={styles.timelineHeader}>
+            <div className="timeline-header">
               <button
                 type="button"
                 onClick={() => setIsPlaying((playing) => !playing)}
-                style={styles.playButton}
+                className="play-button"
                 aria-label={isPlaying ? 'Pause nowcast playback' : 'Play nowcast playback'}
               >
                 {isPlaying ? '⏸' : '▶'}
               </button>
-              <label htmlFor="frame-scrubber" style={styles.timelineLabel}>
+              <label htmlFor="frame-scrubber" className="timeline-label">
                 <span>0-3hr forecast window</span>
-                <strong>T+{currentFrame?.elapsed_min ?? 0} min</strong>
+                <strong>T+{currentElapsedMin} min</strong>
               </label>
             </div>
             <input
@@ -318,61 +637,80 @@ export default function FloodNowcastMap() {
                 setIsPlaying(false);
                 setFrameIndex(Number(event.target.value));
               }}
-              style={styles.slider}
+              className="slider"
             />
 
-            <div style={styles.summaryRow}>
-              <span style={{ color: '#ef4444' }}>{runSummary.impassable} impassable</span>
-              <span style={{ color: '#eab308' }}>{runSummary.pooling} pooling</span>
-              <span style={{ color: '#9ca3af' }}>{runSummary.dry} clear</span>
+            <div className="summary-row">
+              <span className="summary-row__impassable">{runSummary.impassable} impassable</span>
+              <span className="summary-row__pooling">{runSummary.pooling} pooling</span>
+              <span className="summary-row__dry">{runSummary.dry} clear</span>
             </div>
+            <p className="summary-hint">Hover or tap a road for its depth and flood timing.</p>
           </div>
         )}
-        <div style={styles.routeSection}>
+
+        <div className="panel__section">
           <button
             type="button"
             onClick={toggleRouteMode}
-            style={{ ...styles.button, marginTop: 0, background: routeMode ? '#ef4444' : '#34d399' }}
+            className={`button ${routeMode ? 'button--danger' : 'button--route'}`}
           >
-            {routeMode ? 'Cancel route planning' : 'Plan flood-safe route'}
+            {routeMode ? 'Exit route planning' : 'Plan flood-safe route'}
           </button>
 
-          {routeMode && routePoints.length < 2 && (
-            <p style={styles.routeHint}>
-              {routePoints.length === 0
-                ? 'Click the map to set a start point.'
-                : 'Now click a destination.'}
+          {routeMode && (
+            <p className="route-hint">
+              {routePoints.length === 0 && 'Click the map to set a start point.'}
+              {routePoints.length === 1 && 'Now click a destination.'}
+              {routePoints.length === 2 && 'Drag the pins to adjust the route.'}
             </p>
           )}
-          {isRouting && <p style={styles.routeHint}>Finding a flood-safe path…</p>}
-          {routeError && <p role="alert" style={styles.error}>{routeError}</p>}
+
+          {routePoints.length === 2 && (
+            <div className="route-actions">
+              <button type="button" onClick={swapRoutePoints} className="button button--secondary">
+                Swap start / end
+              </button>
+              <button type="button" onClick={clearRoute} className="button button--secondary">
+                Clear
+              </button>
+            </div>
+          )}
+
+          {isRouting && <p className="route-hint" role="status">Finding a flood-safe path…</p>}
+          {routeError && <p role="alert" className="notice notice--error">{routeError}</p>}
 
           {route && !routeError && (
-            <div style={styles.routeSummary}>
-              <p style={styles.routeDistance}>{(route.distance_m / 1000).toFixed(2)} km</p>
+            <div className="route-summary">
+              <p className="route-summary__distance">
+                {(route.distance_m / 1000).toFixed(2)} km
+                {frames.length > 0 && (
+                  <span className="route-summary__time">conditions at T+{route.elapsed_min} min</span>
+                )}
+              </p>
               {route.degraded ? (
-                <p style={{ ...styles.routeHint, color: '#f97316' }}>
-                  No fully dry route exists — this path still crosses {route.flooded_road_ids.length}{' '}
-                  flooded segment(s).
+                <p className="route-hint route-hint--danger">
+                  No fully dry route exists. This path still crosses {route.flooded_road_ids.length}{' '}
+                  flooded segment(s), highlighted on the map.
                 </p>
               ) : route.flooded_road_ids.length > 0 ? (
-                <p style={{ ...styles.routeHint, color: '#eab308' }}>
+                <p className="route-hint route-hint--warning">
                   Avoids impassable roads, but passes {route.flooded_road_ids.length} pooling
-                  segment(s).
+                  segment(s), highlighted on the map.
                 </p>
               ) : (
-                <p style={{ ...styles.routeHint, color: '#22c55e' }}>Fully dry route.</p>
+                <p className="route-hint route-hint--safe">Fully dry route.</p>
               )}
             </div>
           )}
         </div>
       </section>
 
-      <aside style={styles.legend} aria-label="Flood depth legend">
-        <p style={styles.legendTitle}>Road status</p>
+      <aside className="panel legend" aria-label="Flood depth legend">
+        <p className="eyebrow">Road status</p>
         {LEGEND_ITEMS.map((item) => (
-          <div key={item.label} style={styles.legendRow}>
-            <span style={{ ...styles.legendSwatch, background: item.color }} />
+          <div key={item.label} className="legend__row">
+            <span className="legend__swatch" style={{ background: item.color }} />
             <span>{item.label}</span>
           </div>
         ))}
@@ -386,34 +724,3 @@ const LEGEND_ITEMS = [
   { label: 'Pooling (10-30 cm)', color: '#eab308' },
   { label: 'Impassable (>= 30 cm)', color: '#ef4444' },
 ];
-
-// Keeping your exact UI styles
-const styles = {
-  mapShell: { position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#111827' },
-  controlPanel: { position: 'absolute', left: 24, bottom: 24, width: 'min(340px, calc(100vw - 48px))', padding: 20, color: '#f9fafb', background: 'rgba(17, 24, 39, 0.94)', border: '1px solid rgba(156, 163, 175, 0.3)', borderRadius: 8, boxShadow: '0 12px 30px rgba(0, 0, 0, 0.35)', fontFamily: 'system-ui, sans-serif' },
-  panelHeader: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 },
-  eyebrow: { margin: '0 0 4px', color: '#9ca3af', fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' },
-  title: { margin: 0, fontSize: 24, lineHeight: 1.1 },
-  subtitle: { margin: '4px 0 0', color: '#6b7280', fontSize: 11, letterSpacing: '0.04em' },
-  statusDot: { width: 10, height: 10, marginTop: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 0 4px rgba(34, 197, 94, 0.15)' },
-  label: { display: 'flex', justifyContent: 'space-between', gap: 12, color: '#d1d5db', fontSize: 14 },
-  slider: { width: '100%', margin: '16px 0 4px', accentColor: '#60a5fa' },
-  rangeLabels: { display: 'flex', justifyContent: 'space-between', color: '#6b7280', fontSize: 12 },
-  categoryTag: { margin: '10px 0 0', fontSize: 13, fontWeight: 600 },
-  button: { width: '100%', marginTop: 20, padding: '11px 14px', color: '#111827', background: '#60a5fa', border: 0, borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 700 },
-  error: { margin: '12px 0 0', color: '#fca5a5', fontSize: 13 },
-  summary: { marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(156, 163, 175, 0.2)' },
-  summaryTimestamp: { margin: '0 0 8px', color: '#6b7280', fontSize: 11 },
-  summaryRow: { display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, marginTop: 8 },
-  routeSection: { marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(156, 163, 175, 0.2)' },
-  routeHint: { margin: '8px 0 0', color: '#9ca3af', fontSize: 12 },
-  routeSummary: { marginTop: 8 },
-  routeDistance: { margin: 0, fontSize: 16, fontWeight: 700 },
-  timelineHeader: { display: 'flex', alignItems: 'center', gap: 10 },
-  playButton: { width: 28, height: 28, flexShrink: 0, borderRadius: '50%', border: '1px solid rgba(156, 163, 175, 0.4)', background: 'transparent', color: '#f9fafb', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  timelineLabel: { flex: 1, display: 'flex', justifyContent: 'space-between', color: '#d1d5db', fontSize: 12 },
-  legend: { position: 'absolute', right: 24, top: 24, padding: '14px 16px', color: '#f9fafb', background: 'rgba(17, 24, 39, 0.94)', border: '1px solid rgba(156, 163, 175, 0.3)', borderRadius: 8, boxShadow: '0 12px 30px rgba(0, 0, 0, 0.35)', fontFamily: 'system-ui, sans-serif' },
-  legendTitle: { margin: '0 0 10px', color: '#9ca3af', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' },
-  legendRow: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 6 },
-  legendSwatch: { width: 12, height: 12, borderRadius: 3, flexShrink: 0 },
-};
